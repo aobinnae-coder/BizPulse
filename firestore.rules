@@ -1,0 +1,153 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    // Collection: businesses
+    // Document ID: businessId
+    // Fields: name, logoUrl, brandColor, address, industry, ownerUid, createdAt
+    
+    // Collection: surveys
+    // Document ID: surveyId
+    // Fields: businessId, title, description, questions, settings, createdAt
+    
+    // Collection: responses
+    // Document ID: responseId
+    // Fields: surveyId, businessId, answers, respondent, sentiment, score, notes, status, createdAt
+    
+    // Collection: actionItems
+    // Document ID: itemId
+    // Fields: businessId, responseId, title, description, priority, status, dueDate, assignedTo, createdAt
+    
+    // Collection: customers
+    // Document ID: customerId
+    // Fields: businessId, name, email, phone, tags, notes, createdAt
+
+    // Collection: products
+    // Document ID: productId
+    // Fields: businessId, name, price, stock, status, ...
+    
+    // Collection: orders
+    // Document ID: orderId
+    // Fields: businessId, total, status, paymentStatus, ...
+
+    // Collection: notifications
+    // Document ID: notificationId
+    // Fields: businessId, type, title, message, read, createdAt
+
+    // Collection: staff
+    // Document ID: staffId
+    // Fields: businessId, email, role, createdAt
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isBusinessOwner(businessId) {
+      return isAuthenticated() && 
+        businessId != null &&
+        exists(/databases/$(database)/documents/businesses/$(businessId)) &&
+        get(/databases/$(database)/documents/businesses/$(businessId)).data.ownerUid == request.auth.uid;
+    }
+
+    function isOwnerOrBusinessOwner(data, businessId) {
+      return isAuthenticated() && (
+        (data != null && data.ownerUid == request.auth.uid) || 
+        isBusinessOwner(businessId)
+      );
+    }
+
+    function isValidBusiness(data) {
+      return data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             data.ownerUid == request.auth.uid;
+    }
+
+    function isValidSurvey(data) {
+      return data.businessId is string && data.title is string && data.questions is list;
+    }
+
+    function isValidResponse(data) {
+      return data.surveyId is string && data.businessId is string && data.answers is map;
+    }
+
+    function isValidProduct(data) {
+      return data.businessId is string && data.name is string && data.price is number;
+    }
+
+    function isValidOrder(data) {
+      return data.businessId is string && data.total is number && data.status is string;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /businesses/{businessId} {
+      allow read: if true; // Public for storefront
+      allow create: if isAuthenticated() && isValidBusiness(request.resource.data);
+      allow update: if isAuthenticated() && resource.data.ownerUid == request.auth.uid && isValidBusiness(request.resource.data);
+    }
+
+    match /products/{productId} {
+      allow read: if true; // Public for storefront
+      allow create: if isAuthenticated() && isOwnerOrBusinessOwner(request.resource.data, request.resource.data.businessId);
+      allow update, delete: if isAuthenticated() && isOwnerOrBusinessOwner(resource.data, resource.data.businessId);
+    }
+
+    match /orders/{orderId} {
+      allow read: if (isAuthenticated() && isBusinessOwner(resource.data.businessId)) || 
+                   (resource.data.customerId != null && request.auth.uid == resource.data.customerId);
+      allow create: if true;
+      allow update: if isAuthenticated() && isOwnerOrBusinessOwner(resource.data, resource.data.businessId);
+    }
+
+    match /surveys/{surveyId} {
+      allow read: if true;
+      allow create: if isAuthenticated() && isOwnerOrBusinessOwner(request.resource.data, request.resource.data.businessId);
+      allow update, delete: if isAuthenticated() && isOwnerOrBusinessOwner(resource.data, resource.data.businessId);
+    }
+
+    match /responses/{responseId} {
+      allow read: if isAuthenticated() && isBusinessOwner(resource.data.businessId);
+      allow create: if true;
+      allow update: if isAuthenticated() && isOwnerOrBusinessOwner(resource.data, resource.data.businessId);
+    }
+
+    match /actionItems/{itemId} {
+      allow read: if isAuthenticated() && isBusinessOwner(resource.data.businessId);
+      allow create: if isAuthenticated() && isOwnerOrBusinessOwner(request.resource.data, request.resource.data.businessId);
+      allow update, delete: if isAuthenticated() && isOwnerOrBusinessOwner(resource.data, resource.data.businessId);
+    }
+
+    match /customers/{customerId} {
+      allow read: if isAuthenticated() && isBusinessOwner(resource.data.businessId);
+      allow create: if isAuthenticated() && isOwnerOrBusinessOwner(request.resource.data, request.resource.data.businessId);
+      allow update, delete: if isAuthenticated() && isOwnerOrBusinessOwner(resource.data, resource.data.businessId);
+    }
+
+    match /coupons/{couponId} {
+      allow read: if true;
+      allow create: if isAuthenticated() && isOwnerOrBusinessOwner(request.resource.data, request.resource.data.businessId);
+      allow update, delete: if isAuthenticated() && isOwnerOrBusinessOwner(resource.data, resource.data.businessId);
+    }
+
+    match /notifications/{notificationId} {
+      allow read: if isAuthenticated() && isBusinessOwner(resource.data.businessId);
+      allow update, delete: if isAuthenticated() && isOwnerOrBusinessOwner(resource.data, resource.data.businessId);
+      allow create: if true;
+    }
+
+    match /staff/{staffId} {
+      allow read: if isAuthenticated() && isBusinessOwner(resource.data.businessId);
+      allow write: if isAuthenticated() && isOwnerOrBusinessOwner(request.resource.data || resource.data, request.resource.data.businessId || resource.data.businessId);
+    }
+  }
+}

@@ -1,0 +1,177 @@
+{
+  "entities": {
+    "Business": {
+      "title": "Business",
+      "description": "Business profile and settings",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "logoUrl": { "type": "string" },
+        "brandColor": { "type": "string" },
+        "address": { "type": "string" },
+        "industry": { "type": "string" },
+        "ownerUid": { "type": "string" },
+        "currency": { "type": "string", "default": "USD" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "ownerUid"]
+    },
+    "Product": {
+      "title": "Product",
+      "description": "Inventory item or service",
+      "type": "object",
+      "properties": {
+        "businessId": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "price": { "type": "number" },
+        "sku": { "type": "string" },
+        "stock": { "type": "number" },
+        "threshold": { "type": "number" },
+        "category": { "type": "string" },
+        "imageUrl": { "type": "string" },
+        "status": { "type": "string", "enum": ["active", "inactive", "draft"] },
+        "variants": { "type": "array", "items": { "type": "object" } },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["businessId", "name", "price"]
+    },
+    "Order": {
+      "title": "Order",
+      "description": "Customer purchase",
+      "type": "object",
+      "properties": {
+        "businessId": { "type": "string" },
+        "customerId": { "type": "string" },
+        "items": { "type": "array" },
+        "subtotal": { "type": "number" },
+        "discount": { "type": "number" },
+        "total": { "type": "number" },
+        "couponCode": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "confirmed", "processing", "ready", "completed", "cancelled"] },
+        "paymentStatus": { "type": "string", "enum": ["paid", "pending", "failed", "refunded"] },
+        "trackingNumber": { "type": "string" },
+        "carrier": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["businessId", "total", "status"]
+    },
+    "Coupon": {
+      "title": "Coupon",
+      "description": "Discount codes",
+      "type": "object",
+      "properties": {
+        "businessId": { "type": "string" },
+        "code": { "type": "string" },
+        "type": { "type": "string", "enum": ["percentage", "fixed"] },
+        "value": { "type": "number" },
+        "active": { "type": "boolean" },
+        "expiryDate": { "type": "string" },
+        "usageLimit": { "type": "number" },
+        "usageCount": { "type": "number" }
+      },
+      "required": ["businessId", "code", "type", "value"]
+    },
+    "Survey": {
+      "title": "Survey",
+      "description": "A customer feedback survey",
+      "type": "object",
+      "properties": {
+        "businessId": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "questions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "type": { "type": "string", "enum": ["star", "nps", "choice", "text", "long_text", "toggle", "ranking"] },
+              "label": { "type": "string" },
+              "options": { "type": "array", "items": { "type": "string" } },
+              "required": { "type": "boolean" }
+            }
+          }
+        },
+        "settings": {
+          "type": "object",
+          "properties": {
+            "requireContact": { "type": "boolean" },
+            "active": { "type": "boolean" },
+            "startDate": { "type": "string" },
+            "endDate": { "type": "string" },
+            "responseLimit": { "type": "number" }
+          }
+        },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["businessId", "title", "questions"]
+    },
+    "Response": {
+      "title": "Response",
+      "description": "A customer's response to a survey",
+      "type": "object",
+      "properties": {
+        "surveyId": { "type": "string" },
+        "businessId": { "type": "string" },
+        "orderId": { "type": "string" },
+        "answers": { "type": "object" },
+        "respondent": {
+          "type": "object",
+          "properties": {
+            "name": { "type": "string" },
+            "email": { "type": "string" }
+          }
+        },
+        "sentiment": { "type": "string", "enum": ["positive", "neutral", "negative"] },
+        "score": { "type": "number" },
+        "notes": { "type": "array", "items": { "type": "string" } },
+        "status": { "type": "string", "enum": ["new", "reviewed", "flagged", "archived"] },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["surveyId", "businessId", "answers"]
+    },
+    "ActionItem": {
+      "title": "Action Item",
+      "description": "A task created to close the feedback loop",
+      "type": "object",
+      "properties": {
+        "businessId": { "type": "string" },
+        "responseId": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "priority": { "type": "string", "enum": ["low", "medium", "high"] },
+        "status": { "type": "string", "enum": ["todo", "in-progress", "done"] },
+        "dueDate": { "type": "string" },
+        "assignedTo": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["businessId", "title", "status"]
+    },
+    "Customer": {
+      "title": "Customer",
+      "description": "Customer directory entry",
+      "type": "object",
+      "properties": {
+        "businessId": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "tags": { "type": "array", "items": { "type": "string" } },
+        "notes": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["businessId", "email"]
+    }
+  },
+  "firestore": {
+    "/businesses/{businessId}": { "schema": "Business", "description": "Business settings" },
+    "/products/{productId}": { "schema": "Product", "description": "Inventory items" },
+    "/orders/{orderId}": { "schema": "Order", "description": "Customer orders" },
+    "/coupons/{couponId}": { "schema": "Coupon", "description": "Discount coupons" },
+    "/surveys/{surveyId}": { "schema": "Survey", "description": "Survey definitions" },
+    "/responses/{responseId}": { "schema": "Response", "description": "Survey responses" },
+    "/actionItems/{itemId}": { "schema": "ActionItem", "description": "Action items for feedback loop" },
+    "/customers/{customerId}": { "schema": "Customer", "description": "Customer directory" }
+  }
+}
