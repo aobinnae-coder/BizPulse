@@ -158,7 +158,7 @@ export default function App() {
             onClick={handleLogin}
             className="w-full py-4 bg-stone-900 text-white rounded-2xl font-bold hover:bg-stone-800 transition-all flex items-center justify-center gap-3 shadow-md hover:shadow-lg"
           >
-            <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/layout/google.svg" className="w-5 h-5" alt="Google" />
+            <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/layout/google.svg" className="w-5 h-5" alt="Google" referrerPolicy="no-referrer" />
             Continue with Google
           </button>
           <p className="mt-8 text-xs text-stone-400">By continuing, you agree to our Terms of Service.</p>
