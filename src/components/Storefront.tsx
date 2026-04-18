@@ -1,12 +1,55 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../lib/firebase';
 import { collection, query, where, onSnapshot, addDoc, doc, getDoc, getDocs, limit, updateDoc } from 'firebase/firestore';
-import { ShoppingCart, Search, Filter, ChevronRight, Star, Plus, Minus, X, CheckCircle2, Truck, Tag } from 'lucide-react';
+import { ShoppingCart, Search, Filter, ChevronRight, Star, Plus, Minus, X, CheckCircle2, Truck, Tag, CreditCard as CreditCardIcon } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '../lib/utils';
 import { usePlanLimits } from '../hooks/usePlanLimits';
 import { updateOrCreateCustomer } from '../lib/customers';
 import { createNotification } from '../lib/notifications';
+import { loadStripe } from '@stripe/stripe-js';
+import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js';
+
+// Setup Stripe Promise (using a placeholder test key if not provided via env variables)
+const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLIC_KEY || "pk_test_TYooMQauvdEDq54NiTphI7jx");
+
+function CheckoutForm({ clientSecret, amount, onSuccessfulPayment }: { clientSecret: string, amount: number, onSuccessfulPayment: () => void }) {
+  const stripe = useStripe();
+  const elements = useElements();
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!stripe || !elements) return;
+
+    setIsProcessing(true);
+    const { error } = await stripe.confirmPayment({
+      elements,
+      redirect: 'if_required' 
+    });
+
+    if (error) {
+      setErrorMessage(error.message || "An unexpected error occurred.");
+    } else {
+      onSuccessfulPayment();
+    }
+    setIsProcessing(false);
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-6">
+      <PaymentElement />
+      {errorMessage && <div className="text-red-500 text-sm mt-2">{errorMessage}</div>}
+      <button 
+        disabled={isProcessing || !stripe || !elements}
+        className="w-full py-4 bg-stone-900 text-white rounded-2xl font-bold hover:bg-stone-800 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
+      >
+        {isProcessing ? "Processing..." : `Pay $${amount.toFixed(2)}`}
+      </button>
+    </form>
+  );
+}
 
 export default function Storefront({ businessId }: { businessId: string }) {
   const [business, setBusiness] = useState<any>(null);
@@ -42,6 +85,8 @@ export default function Storefront({ businessId }: { businessId: string }) {
   const [view, setView] = useState<'shop' | 'track'>('shop');
   const [monthlyOrderCount, setMonthlyOrderCount] = useState(0);
   const [customerInfo, setCustomerInfo] = useState({ name: '', email: '', phone: '' });
+  const [clientSecret, setClientSecret] = useState('');
+  const [isCheckoutProcessing, setIsCheckoutProcessing] = useState(false);
   const { checkLimit } = usePlanLimits(business, { totalOrders: monthlyOrderCount });
 
   const lookupOrder = async () => {
@@ -157,7 +202,9 @@ export default function Storefront({ businessId }: { businessId: string }) {
     }
   };
 
-  const handleCheckout = async () => {
+  const [pendingOrderId, setPendingOrderId] = useState<string | null>(null);
+
+  const handleCheckoutInit = async () => {
     if (!customerInfo.name || !customerInfo.email) {
       alert("Please provide your name and email for the order.");
       return;
@@ -167,7 +214,21 @@ export default function Storefront({ businessId }: { businessId: string }) {
       alert("This business is currently unable to accept new orders due to plan limits. Please contact the owner.");
       return;
     }
+    
+    setIsCheckoutProcessing(true);
     try {
+      const res = await fetch('/api/create-payment-intent', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          amount: Math.max(50, Math.round(cartTotal * 100)), // convert to cents, min $0.50
+          currency: 'usd'
+        })
+      });
+      const data = await res.json();
+      
+      if (!res.ok) throw new Error(data.error || "Failed to initialize payment");
+
       const orderData = {
         businessId,
         ownerUid: business?.ownerUid || null,
@@ -177,15 +238,34 @@ export default function Storefront({ businessId }: { businessId: string }) {
         total: cartTotal,
         couponCode: appliedCoupon?.code || null,
         status: 'pending',
-        paymentStatus: 'paid', // Simulated payment
+        paymentStatus: 'pending',
         customerName: customerInfo.name,
         customerEmail: customerInfo.email,
         customerPhone: customerInfo.phone,
         createdAt: new Date().toISOString()
       };
+      // For a real app, you would pass the PaymentIntent ID to the order record
       const docRef = await addDoc(collection(db, 'orders'), orderData);
       
-      // Update customer record
+      setPendingOrderId(docRef.id);
+      setClientSecret(data.clientSecret);
+    } catch (error: any) {
+      console.error(error);
+      alert(error.message);
+    } finally {
+      setIsCheckoutProcessing(false);
+    }
+  };
+
+  const handlePaymentSuccess = async () => {
+    if (!pendingOrderId) return;
+    
+    try {
+      await updateDoc(doc(db, 'orders', pendingOrderId), {
+        paymentStatus: 'paid',
+        status: 'processing'
+      });
+
       await updateOrCreateCustomer(businessId, {
         name: customerInfo.name,
         email: customerInfo.email,
@@ -193,7 +273,6 @@ export default function Storefront({ businessId }: { businessId: string }) {
         spent: cartTotal
       }, business?.ownerUid);
 
-      // Create notification
       await createNotification({
         businessId,
         type: 'order',
@@ -202,7 +281,6 @@ export default function Storefront({ businessId }: { businessId: string }) {
         link: 'orders'
       }, business?.ownerUid);
 
-      // Increment coupon usage if applied
       if (appliedCoupon) {
         const couponRef = doc(db, 'coupons', appliedCoupon.id);
         await updateDoc(couponRef, {
@@ -210,12 +288,16 @@ export default function Storefront({ businessId }: { businessId: string }) {
         });
       }
 
-      setOrderComplete({ id: docRef.id, ...orderData });
+      const finalDoc = await getDoc(doc(db, 'orders', pendingOrderId));
+      
+      setClientSecret('');
+      setOrderComplete({ id: finalDoc.id, ...finalDoc.data() });
       setCart([]);
       setShowCart(false);
       setAppliedCoupon(null);
-    } catch (error) {
-      console.error("Checkout error:", error);
+    } catch (e) {
+      console.error(e);
+      alert("Payment successful, but error finalizing order. Please contact support.");
     }
   };
 
@@ -610,12 +692,20 @@ export default function Storefront({ businessId }: { businessId: string }) {
                       <span>${cartTotal.toFixed(2)}</span>
                     </div>
                   </div>
-                  <button 
-                    onClick={handleCheckout}
-                    className="w-full py-4 bg-stone-900 text-white rounded-2xl font-bold hover:bg-stone-800 transition-all flex items-center justify-center gap-2"
-                  >
-                    Checkout <ChevronRight className="w-5 h-5" />
-                  </button>
+                  
+                  {clientSecret ? (
+                    <Elements stripe={stripePromise} options={{ clientSecret }}>
+                      <CheckoutForm clientSecret={clientSecret} amount={cartTotal} onSuccessfulPayment={handlePaymentSuccess} />
+                    </Elements>
+                  ) : (
+                    <button 
+                      onClick={handleCheckoutInit}
+                      disabled={isCheckoutProcessing}
+                      className="w-full py-4 bg-stone-900 text-white rounded-2xl font-bold hover:bg-stone-800 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
+                    >
+                      {isCheckoutProcessing ? "Processing..." : "Checkout"} <ChevronRight className="w-5 h-5" />
+                    </button>
+                  )}
                 </div>
               )}
             </motion.div>

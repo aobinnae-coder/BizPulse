@@ -197,18 +197,20 @@ export default function CouponManager({ user, business }: { user: any, business:
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-bold text-stone-400 uppercase tracking-widest mb-2">Usage Limit</label>
+                  <label className="block text-xs font-bold text-stone-400 uppercase tracking-widest mb-2">Usage Limit (Max Uses)</label>
                   <input 
                     type="number" 
-                    value={newCoupon.usageLimit}
-                    onChange={e => setNewCoupon({...newCoupon, usageLimit: Number(e.target.value)})}
+                    min="1"
+                    placeholder="e.g. 100"
+                    value={newCoupon.usageLimit || ''}
+                    onChange={e => setNewCoupon({...newCoupon, usageLimit: parseInt(e.target.value) || 0})}
                     className="w-full bg-stone-50 border-none rounded-2xl py-3 px-4 text-sm outline-none focus:ring-2 focus:ring-stone-900"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-stone-400 uppercase tracking-widest mb-2">Expiry Date</label>
+                  <label className="block text-xs font-bold text-stone-400 uppercase tracking-widest mb-2">Expiry Date (Optional)</label>
                   <input 
-                    type="date" 
+                    type="datetime-local" 
                     value={newCoupon.expiryDate}
                     onChange={e => setNewCoupon({...newCoupon, expiryDate: e.target.value})}
                     className="w-full bg-stone-50 border-none rounded-2xl py-3 px-4 text-sm outline-none focus:ring-2 focus:ring-stone-900"

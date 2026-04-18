@@ -116,12 +116,27 @@ export default function SurveyBuilder({ user, business }: { user: any, business:
     try {
       const selectedCustomers = customers.filter(c => selectedCustomerIds.has(c.id));
       
-      // Simulate sending to each customer
-      // In a real app, this would call a backend service (SendGrid, Twilio, etc.)
+      // Process distribution to each selected customer
       const batch = selectedCustomers.map(async (customer) => {
         if (type === 'email' && customer.email) {
-          console.log(`Sending email to ${customer.email}: ${distributionMessages.email}`);
+          const body = distributionMessages.email + `\n\nLink: ${window.location.origin}?survey=${currentSurvey.id}`;
+          
+          try {
+            await fetch('/api/send-email', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                to: customer.email,
+                subject: `Feedback Request from ${business.name}`,
+                text: body
+              })
+            });
+            console.log(`Sent email via SendGrid to ${customer.email}`);
+          } catch (e) {
+            console.error('Failed to send email:', e);
+          }
         } else if (type === 'sms' && customer.phone) {
+          // SMS backend isn't set up yet, keep simulating
           console.log(`Sending SMS to ${customer.phone}: ${distributionMessages.sms}`);
         }
       });

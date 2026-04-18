@@ -8,7 +8,13 @@ async function startServer() {
   const PORT = 3000;
 
   // Middleware
-  app.use(express.json());
+  app.use((req, res, next) => {
+    if (req.originalUrl.includes('/webhooks/stripe')) {
+      next();
+    } else {
+      express.json()(req, res, next);
+    }
+  });
 
   // Mount API routes
   app.use("/api", apiRouter);
