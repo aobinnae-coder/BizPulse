@@ -147,7 +147,7 @@ export default function Dashboard({ user, business, onNavigate }: { user: any, b
         <div className="w-16 h-16 bg-stone-100 rounded-full flex items-center justify-center mb-4">
           <AlertCircle className="text-stone-400 w-8 h-8" />
         </div>
-        <h2 className="text-2xl font-bold text-stone-900 mb-2">Welcome to BizPulse</h2>
+        <h2 className="text-2xl font-bold text-stone-900 mb-2">Welcome to BizCompana</h2>
         <p className="text-stone-500 max-w-md mb-6">Complete your business profile to start creating surveys and gathering feedback.</p>
         <button 
           onClick={() => onNavigate('settings')}

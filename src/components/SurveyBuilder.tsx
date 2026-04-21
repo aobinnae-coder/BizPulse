@@ -119,7 +119,7 @@ export default function SurveyBuilder({ user, business }: { user: any, business:
       // Process distribution to each selected customer
       const batch = selectedCustomers.map(async (customer) => {
         if (type === 'email' && customer.email) {
-          const body = distributionMessages.email + `\n\nLink: ${window.location.origin}?survey=${currentSurvey.id}`;
+          const body = distributionMessages.email + `\n\nLink: https://bizcompana.com?survey=${currentSurvey.id}`;
           
           try {
             await fetch('/api/send-email', {
@@ -895,12 +895,12 @@ export default function SurveyBuilder({ user, business }: { user: any, business:
                         <input 
                           type="text" 
                           readOnly 
-                          value={`${window.location.origin}?survey=${currentSurvey.id}`}
+                          value={`https://bizcompana.com?survey=${currentSurvey.id}`}
                           className="flex-1 bg-stone-50 border-stone-200 rounded-xl px-4 py-2 text-sm text-stone-600 outline-none min-w-0"
                         />
                         <div className="flex gap-2 shrink-0">
                           <a 
-                            href={`https://twitter.com/intent/tweet?url=${encodeURIComponent(`${window.location.origin}?survey=${currentSurvey.id}`)}&text=${encodeURIComponent(`Take our survey: ${currentSurvey.title}`)}`}
+                            href={`https://twitter.com/intent/tweet?url=${encodeURIComponent(`https://bizcompana.com?survey=${currentSurvey.id}`)}&text=${encodeURIComponent(`Take our survey: ${currentSurvey.title}`)}`}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="px-4 py-2 bg-[#1DA1F2] text-white rounded-xl hover:bg-[#1DA1F2]/90 flex items-center gap-2 transition-colors text-xs font-bold"
@@ -910,7 +910,7 @@ export default function SurveyBuilder({ user, business }: { user: any, business:
                             Twitter
                           </a>
                           <a 
-                            href={`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(`${window.location.origin}?survey=${currentSurvey.id}`)}`}
+                            href={`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(`https://bizcompana.com?survey=${currentSurvey.id}`)}`}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="px-4 py-2 bg-[#1877F2] text-white rounded-xl hover:bg-[#1877F2]/90 flex items-center gap-2 transition-colors text-xs font-bold"
@@ -920,7 +920,7 @@ export default function SurveyBuilder({ user, business }: { user: any, business:
                             Facebook
                           </a>
                           <button 
-                            onClick={() => handleCopy(`${window.location.origin}?survey=${currentSurvey.id}`)}
+                            onClick={() => handleCopy(`https://bizcompana.com?survey=${currentSurvey.id}`)}
                             className={cn(
                               "flex-1 sm:flex-none px-4 py-2 rounded-xl transition-all flex items-center justify-center gap-2 text-xs font-bold",
                               copied ? "bg-emerald-500 text-white" : "bg-stone-900 text-white hover:bg-stone-800"
@@ -930,7 +930,7 @@ export default function SurveyBuilder({ user, business }: { user: any, business:
                             {copied ? "Copied!" : "Copy Link"}
                           </button>
                           <a 
-                            href={`${window.location.origin}?survey=${currentSurvey.id}`}
+                            href={`https://bizcompana.com?survey=${currentSurvey.id}`}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="p-2 bg-stone-100 text-stone-600 rounded-xl hover:bg-stone-200 flex items-center justify-center"
@@ -945,7 +945,7 @@ export default function SurveyBuilder({ user, business }: { user: any, business:
                       <h3 className="text-lg font-bold text-stone-900 mb-6">QR Code</h3>
                       <div className="p-6 bg-white border-4 border-stone-900 rounded-3xl">
                         <QRCodeSVG 
-                          value={`${window.location.origin}?survey=${currentSurvey.id}`} 
+                          value={`https://bizcompana.com?survey=${currentSurvey.id}`} 
                           size={200}
                           level="H"
                           includeMargin

@@ -25,7 +25,7 @@ import { doc, updateDoc, arrayUnion } from 'firebase/firestore';
 const FAQ_ITEMS = [
   {
     question: "How do the platform fees work?",
-    answer: "Platform fees are charged on every paid order processed through BizPulse. As you move to higher plans, these fees decrease significantly. Our Premium plan has 0% platform fees."
+    answer: "Platform fees are charged on every paid order processed through BizCompana. As you move to higher plans, these fees decrease significantly. Our Premium plan has 0% platform fees."
   },
   {
     question: "Can I change my plan later?",
@@ -245,7 +245,7 @@ export default function PricingPage({ business }: { business: any }) {
       <section className="max-w-3xl mx-auto px-6 mb-32">
         <div className="text-center mb-16">
           <h2 className="text-3xl font-bold text-stone-900 mb-4">Frequently Asked Questions</h2>
-          <p className="text-stone-500">Everything you need to know about BizPulse pricing.</p>
+          <p className="text-stone-500">Everything you need to know about BizCompana pricing.</p>
         </div>
         <div className="space-y-4">
           {FAQ_ITEMS.map((item, idx) => (
@@ -279,7 +279,7 @@ export default function PricingPage({ business }: { business: any }) {
         <div className="bg-stone-900 rounded-[48px] p-12 md:p-24 text-center relative overflow-hidden">
           <div className="relative z-10">
             <h2 className="text-4xl md:text-6xl font-bold text-white mb-8 tracking-tight">Ready to pulse-check <br /> your business?</h2>
-            <p className="text-stone-400 text-xl mb-12 max-w-xl mx-auto">Join thousands of small business owners who are growing faster with BizPulse.</p>
+            <p className="text-stone-400 text-xl mb-12 max-w-xl mx-auto">Join thousands of small business owners who are growing faster with BizCompana.</p>
             <div className="flex flex-col md:flex-row items-center justify-center gap-4 w-full">
               <button 
                 onClick={() => alert('Starting for free!')}

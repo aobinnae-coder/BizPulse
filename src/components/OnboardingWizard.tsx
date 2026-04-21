@@ -78,7 +78,7 @@ export default function OnboardingWizard({ user, onComplete }: OnboardingWizardP
             <div className="w-12 h-12 bg-stone-900 rounded-2xl flex items-center justify-center shadow-lg">
               <Sparkles className="w-7 h-7 text-white" />
             </div>
-            <h1 className="text-3xl font-bold text-stone-900 tracking-tight">BizPulse</h1>
+            <h1 className="text-3xl font-bold text-stone-900 tracking-tight">BizCompana</h1>
           </div>
         </div>
 

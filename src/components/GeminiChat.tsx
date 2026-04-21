@@ -18,7 +18,7 @@ export default function GeminiChat({ user, business }: { user: any, business: an
   const [isMinimized, setIsMinimized] = useState(false);
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<{ role: 'user' | 'model', content: string }[]>([
-    { role: 'model', content: `Hi ${user.displayName}! I'm your BizPulse assistant. How can I help you grow your business today?` }
+    { role: 'model', content: `Hi ${user.displayName}! I'm your BizCompana assistant. How can I help you grow your business today?` }
   ]);
   const [isLoading, setIsLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -42,8 +42,8 @@ export default function GeminiChat({ user, business }: { user: any, business: an
       const chat = ai.chats.create({
         model: "gemini-3-flash-preview",
         config: {
-          systemInstruction: `You are a business consultant for small business owners using BizPulse. 
-          BizPulse is an all-in-one operating system that handles:
+          systemInstruction: `You are a business consultant for small business owners using BizCompana. 
+          BizCompana is an all-in-one operating system that handles:
           1. Inventory & Products (SKUs, stock levels, categories)
           2. Customer Ordering & Payments (Storefront, cart, checkout)
           3. Feedback & Surveys (NPS, sentiment analysis, response management)
@@ -88,7 +88,7 @@ export default function GeminiChat({ user, business }: { user: any, business: an
             <div className="bg-stone-900 p-4 flex items-center justify-between text-white">
               <div className="flex items-center gap-2">
                 <Sparkles className="w-5 h-5 text-amber-400" />
-                <span className="font-bold">BizPulse AI</span>
+                <span className="font-bold">BizCompana AI</span>
               </div>
               <div className="flex items-center gap-2">
                 <button onClick={() => setIsMinimized(!isMinimized)} className="p-1 hover:bg-white/10 rounded">

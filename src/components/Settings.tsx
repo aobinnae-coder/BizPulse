@@ -114,7 +114,7 @@ export default function Settings({ user, business }: { user: any, business: any 
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           to: user.email, 
-          subject: 'Test Email from BizPulse', 
+          subject: 'Test Email from BizCompana', 
           text: 'This is a test email sent via SendGrid integration.' 
         })
       });
@@ -286,7 +286,7 @@ export default function Settings({ user, business }: { user: any, business: any 
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium text-stone-900">Marketing Emails</p>
-                    <p className="text-xs text-stone-500">Receive tips, offers, and news from BizPulse.</p>
+                    <p className="text-xs text-stone-500">Receive tips, offers, and news from BizCompana.</p>
                   </div>
                   <label className="relative inline-flex items-center cursor-pointer">
                     <input 

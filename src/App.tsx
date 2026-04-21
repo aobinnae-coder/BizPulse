@@ -152,7 +152,7 @@ export default function App() {
           <div className="w-20 h-20 bg-stone-900 rounded-3xl flex items-center justify-center mx-auto mb-8 shadow-lg">
             <Sparkles className="w-10 h-10 text-white" />
           </div>
-          <h1 className="text-4xl font-bold text-stone-900 mb-4 tracking-tight">BizPulse</h1>
+          <h1 className="text-4xl font-bold text-stone-900 mb-4 tracking-tight">BizCompana</h1>
           <p className="text-stone-500 mb-10 leading-relaxed text-lg">The all-in-one operating system for your small business.</p>
           <button 
             onClick={handleLogin}
@@ -197,7 +197,7 @@ export default function App() {
             <div className="w-8 h-8 bg-stone-900 dark:bg-white rounded-lg flex items-center justify-center">
               <Sparkles className="text-white dark:text-stone-900 w-5 h-5" />
             </div>
-            <span className="text-xl font-bold text-stone-900 dark:text-white">BizPulse</span>
+            <span className="text-xl font-bold text-stone-900 dark:text-white">BizCompana</span>
           </div>
 
           <nav className="flex-1 px-4 space-y-1">
