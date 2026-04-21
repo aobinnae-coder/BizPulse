@@ -20,7 +20,8 @@ import {
   ShoppingBag,
   Store,
   Tag,
-  CreditCard
+  CreditCard,
+  AlertTriangle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from './lib/utils';
@@ -42,8 +43,10 @@ import OnboardingWizard from './components/OnboardingWizard';
 import CouponManager from './components/CouponManager';
 import PricingPage from './components/Pricing';
 import NotificationCenter from './components/NotificationCenter';
+import SuperAdminDashboard from './components/SuperAdminDashboard';
+import { ShieldCheck } from 'lucide-react';
 
-type View = 'dashboard' | 'surveys' | 'feedback' | 'analytics' | 'actions' | 'customers' | 'inventory' | 'orders' | 'settings' | 'storefront' | 'coupons' | 'pricing';
+type View = 'dashboard' | 'surveys' | 'feedback' | 'analytics' | 'actions' | 'customers' | 'inventory' | 'orders' | 'settings' | 'storefront' | 'coupons' | 'pricing' | 'superadmin';
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -171,6 +174,24 @@ export default function App() {
     return <OnboardingWizard user={user} onComplete={(biz) => setBusiness(biz)} />;
   }
 
+  if (business?.isSuspended && user?.email !== 'a.obinnae@skyrouteusa.com') {
+    return (
+      <div className="min-h-screen bg-stone-50 flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-white p-12 rounded-[40px] shadow-xl border border-stone-100 text-center">
+          <AlertTriangle className="w-16 h-16 text-red-500 mx-auto mb-4" />
+          <h1 className="text-2xl font-bold text-stone-900 mb-2">Account Suspended</h1>
+          <p className="text-stone-500 mb-8">Your organization's access to BizCompana has been suspended. Please contact platform support.</p>
+          <button 
+            onClick={handleLogout}
+            className="text-stone-400 font-bold hover:text-stone-900 uppercase tracking-widest text-xs"
+          >
+            Sign Out
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'inventory', label: 'Inventory', icon: Package },
@@ -184,6 +205,10 @@ export default function App() {
     { id: 'pricing', label: 'Plans & Pricing', icon: CreditCard },
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
+
+  if (user?.email === 'a.obinnae@skyrouteusa.com') {
+    navItems.push({ id: 'superadmin', label: 'Platform Admin', icon: ShieldCheck });
+  }
 
   return (
     <div className="min-h-screen bg-stone-50 dark:bg-stone-950 flex transition-colors duration-300">
@@ -209,10 +234,10 @@ export default function App() {
                   "w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-colors",
                   currentView === item.id 
                     ? "bg-stone-100 dark:bg-stone-800 text-stone-900 dark:text-white" 
-                    : "text-stone-500 dark:text-stone-400 hover:bg-stone-50 dark:hover:bg-stone-800/50 hover:text-stone-900 dark:hover:text-white"
+                    : item.id === 'superadmin' ? "text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20" : "text-stone-500 dark:text-stone-400 hover:bg-stone-50 dark:hover:bg-stone-800/50 hover:text-stone-900 dark:hover:text-white"
                 )}
               >
-                <item.icon className="w-5 h-5" />
+                <item.icon className={cn("w-5 h-5", item.id === 'superadmin' && "text-red-500")} />
                 {item.label}
               </button>
             ))}
@@ -298,6 +323,7 @@ export default function App() {
               {currentView === 'coupons' && <CouponManager user={user} business={business} />}
               {currentView === 'pricing' && <PricingPage business={business} />}
               {currentView === 'settings' && <SettingsPage user={user} business={business} />}
+              {currentView === 'superadmin' && user?.email === 'a.obinnae@skyrouteusa.com' && <SuperAdminDashboard user={user} />}
               {currentView === 'storefront' && <Storefront businessId={business?.id} />}
             </motion.div>
           </AnimatePresence>

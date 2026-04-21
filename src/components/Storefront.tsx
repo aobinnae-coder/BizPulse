@@ -11,7 +11,7 @@ import { loadStripe } from '@stripe/stripe-js';
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js';
 
 // Setup Stripe Promise (using a placeholder test key if not provided via env variables)
-const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLIC_KEY || "pk_test_TYooMQauvdEDq54NiTphI7jx");
+const stripePromise = loadStripe((import.meta as any).env.VITE_STRIPE_PUBLIC_KEY || "pk_test_TYooMQauvdEDq54NiTphI7jx");
 
 function CheckoutForm({ clientSecret, amount, onSuccessfulPayment }: { clientSecret: string, amount: number, onSuccessfulPayment: () => void }) {
   const stripe = useStripe();
