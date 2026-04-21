@@ -94,10 +94,25 @@ export default function PublicSurvey({ surveyId }: { surveyId: string }) {
   const questions = allQuestions.filter((q: any) => {
     if (!q.logic || !q.logic.dependsOnId) return true;
     const dependentAnswer = answers[q.logic.dependsOnId];
-    if (q.logic.condition === 'equals') {
-      return String(dependentAnswer) === String(q.logic.value);
+    if (dependentAnswer === undefined) return false;
+    
+    const stringDependent = String(dependentAnswer).toLowerCase();
+    const stringValue = String(q.logic.value).toLowerCase();
+
+    switch (q.logic.condition) {
+      case 'equals':
+        return stringDependent === stringValue;
+      case 'not_equals':
+        return stringDependent !== stringValue;
+      case 'contains':
+        return stringDependent.includes(stringValue);
+      case 'greater_than':
+        return Number(dependentAnswer) > Number(q.logic.value);
+      case 'less_than':
+        return Number(dependentAnswer) < Number(q.logic.value);
+      default:
+        return true;
     }
-    return true;
   });
 
   const totalSteps = questions.length + (survey.settings?.requireContact ? 1 : 0);

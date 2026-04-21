@@ -13,8 +13,9 @@ const COLUMNS = [
 
 export default function ActionBoard({ user, business }: { user: any, business: any }) {
   const [items, setItems] = useState<any[]>([]);
+  const [staff, setStaff] = useState<any[]>([]);
   const [isAdding, setIsAdding] = useState(false);
-  const [newItem, setNewItem] = useState({ title: '', description: '', priority: 'medium', dueDate: '' });
+  const [newItem, setNewItem] = useState({ title: '', description: '', priority: 'medium', dueDate: '', assignedTo: '' });
   const [priorityFilter, setPriorityFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [selectedTask, setSelectedTask] = useState<any>(null);
@@ -27,7 +28,16 @@ export default function ActionBoard({ user, business }: { user: any, business: a
     const unsubscribe = onSnapshot(q, (s) => {
       setItems(s.docs.map(d => ({ id: d.id, ...d.data() })));
     });
-    return () => unsubscribe();
+    
+    const staffQuery = query(collection(db, 'staff'), where('businessId', '==', business.id));
+    const staffUnsub = onSnapshot(staffQuery, (s) => {
+      setStaff(s.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
+
+    return () => {
+      unsubscribe();
+      staffUnsub();
+    };
   }, [business]);
 
   const updateStatus = async (id: string, status: string) => {
@@ -43,7 +53,7 @@ export default function ActionBoard({ user, business }: { user: any, business: a
       status: 'todo',
       createdAt: new Date().toISOString()
     });
-    setNewItem({ title: '', description: '', priority: 'medium', dueDate: '' });
+    setNewItem({ title: '', description: '', priority: 'medium', dueDate: '', assignedTo: '' });
     setIsAdding(false);
   };
 
@@ -55,7 +65,7 @@ export default function ActionBoard({ user, business }: { user: any, business: a
       priority: editTaskData.priority,
       status: editTaskData.status,
       dueDate: editTaskData.dueDate,
-      assignee: editTaskData.assignee
+      assignedTo: editTaskData.assignedTo || null
     });
     setSelectedTask({ ...selectedTask, ...editTaskData });
     setIsEditingTask(false);
@@ -142,6 +152,18 @@ export default function ActionBoard({ user, business }: { user: any, business: a
                   </div>
                   <h4 className="text-sm font-bold text-stone-900 mb-1">{item.title}</h4>
                   <p className="text-xs text-stone-500 line-clamp-2 mb-4">{item.description}</p>
+                  
+                  {item.assignedTo && (
+                    <div className="flex items-center gap-1.5 mb-3 border border-stone-100 bg-stone-50 w-fit px-2 py-1 rounded-lg">
+                      <div className="w-4 h-4 bg-stone-200 rounded-full flex items-center justify-center text-[8px] font-bold text-stone-600">
+                        {staff.find(s => s.id === item.assignedTo)?.name?.charAt(0) || staff.find(s => s.id === item.assignedTo)?.email?.charAt(0) || '?'}
+                      </div>
+                      <span className="text-[10px] font-medium text-stone-600">
+                        {staff.find(s => s.id === item.assignedTo)?.name || staff.find(s => s.id === item.assignedTo)?.email?.split('@')[0] || 'Unknown'}
+                      </span>
+                    </div>
+                  )}
+
                   <div className="flex items-center justify-between text-[10px] text-stone-400 font-medium">
                     <div className="flex items-center gap-2">
                       <Calendar className="w-3 h-3" />
@@ -203,6 +225,19 @@ export default function ActionBoard({ user, business }: { user: any, business: a
                   className="w-full p-4 bg-stone-50 rounded-2xl outline-none"
                 />
               </div>
+              <div>
+                <label className="block text-xs font-bold text-stone-500 mb-1">Assign To</label>
+                <select 
+                  value={newItem.assignedTo}
+                  onChange={e => setNewItem({...newItem, assignedTo: e.target.value})}
+                  className="w-full p-4 bg-stone-50 rounded-2xl outline-none"
+                >
+                  <option value="">Unassigned</option>
+                  {staff.map(s => (
+                    <option key={s.id} value={s.id}>{s.name || s.email}</option>
+                  ))}
+                </select>
+              </div>
             </div>
             <div className="mt-8 flex gap-3">
               <button onClick={() => setIsAdding(false)} className="flex-1 py-3 text-sm font-bold text-stone-500 hover:bg-stone-50 rounded-xl">Cancel</button>
@@ -247,6 +282,28 @@ export default function ActionBoard({ user, business }: { user: any, business: a
                   />
                 ) : (
                   <p className="text-stone-900 font-medium">{selectedTask.title}</p>
+                )}
+              </div>
+              
+              <div>
+                <label className="block text-xs font-bold text-stone-500 mb-1">Assigned To</label>
+                {isEditingTask ? (
+                  <select 
+                    value={editTaskData?.assignedTo || ''}
+                    onChange={e => setEditTaskData({...editTaskData, assignedTo: e.target.value})}
+                    className="w-full p-3 bg-stone-50 rounded-xl outline-none"
+                  >
+                    <option value="">Unassigned</option>
+                    {staff.map(s => (
+                      <option key={s.id} value={s.id}>{s.name || s.email}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <p className="text-stone-900 font-medium">
+                    {selectedTask.assignedTo 
+                      ? staff.find(s => s.id === selectedTask.assignedTo)?.name || staff.find(s => s.id === selectedTask.assignedTo)?.email || 'Unknown User'
+                      : 'Unassigned'}
+                  </p>
                 )}
               </div>
 

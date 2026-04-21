@@ -15,6 +15,11 @@ export default function Analytics({ user, business }: { user: any, business: any
   const [surveys, setSurveys] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [dateRange, setDateRange] = useState<'7d' | '30d' | 'all'>('30d');
+  
+  // New Filter States
+  const [filterSurveyId, setFilterSurveyId] = useState<string>('all');
+  const [filterSentiment, setFilterSentiment] = useState<string>('all');
+  const [filterScore, setFilterScore] = useState<string>('all');
 
   useEffect(() => {
     if (!business) return;
@@ -47,7 +52,26 @@ export default function Analytics({ user, business }: { user: any, business: any
     return items.filter(item => isAfter(new Date(item.createdAt), cutoff));
   };
 
-  const filteredResponses = filterByDate(responses);
+  const getFilteredResponses = () => {
+    let filtered = filterByDate(responses);
+
+    if (filterSurveyId !== 'all') {
+      filtered = filtered.filter(r => r.surveyId === filterSurveyId);
+    }
+    
+    if (filterSentiment !== 'all') {
+      filtered = filtered.filter(r => r.sentiment === filterSentiment);
+    }
+
+    if (filterScore !== 'all') {
+      const targetScore = parseInt(filterScore, 10);
+      filtered = filtered.filter(r => r.score === targetScore);
+    }
+
+    return filtered;
+  }
+
+  const filteredResponses = getFilteredResponses();
   const filteredOrders = filterByDate(orders);
 
   const sentimentData = [
@@ -106,6 +130,35 @@ export default function Analytics({ user, business }: { user: any, business: any
           <p className="text-stone-500">Deep dive into your customer satisfaction metrics.</p>
         </div>
         <div className="flex bg-white border border-stone-200 rounded-xl p-1">
+          <select
+            value={filterSurveyId}
+            onChange={(e) => setFilterSurveyId(e.target.value)}
+            className="bg-transparent border-none text-sm font-bold text-stone-600 outline-none pr-6 cursor-pointer"
+          >
+            <option value="all">All Surveys</option>
+            {surveys.map(s => <option key={s.id} value={s.id}>{s.title || 'Untitled Survey'}</option>)}
+          </select>
+          <div className="w-px bg-stone-200 mx-2" />
+          <select
+            value={filterSentiment}
+            onChange={(e) => setFilterSentiment(e.target.value)}
+            className="bg-transparent border-none text-sm font-bold text-stone-600 outline-none pr-6 cursor-pointer"
+          >
+            <option value="all">All Sentiments</option>
+            <option value="positive">Positive</option>
+            <option value="neutral">Neutral</option>
+            <option value="negative">Negative</option>
+          </select>
+          <div className="w-px bg-stone-200 mx-2" />
+          <select
+            value={filterScore}
+            onChange={(e) => setFilterScore(e.target.value)}
+            className="bg-transparent border-none text-sm font-bold text-stone-600 outline-none pr-6 cursor-pointer"
+          >
+            <option value="all">All Scores</option>
+            {[1,2,3,4,5,6,7,8,9,10].map(s => <option key={s} value={s}>{s} Stars</option>)}
+          </select>
+          <div className="w-px bg-stone-200 mx-2" />
           <button 
             onClick={() => setDateRange('7d')}
             className={cn("px-4 py-1.5 rounded-lg text-sm font-bold transition-all", dateRange === '7d' ? "bg-stone-900 text-white" : "text-stone-500 hover:text-stone-900")}

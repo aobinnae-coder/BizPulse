@@ -77,12 +77,31 @@ apiRouter.post("/create-background-check", async (req, res) => {
 
     res.json({ 
       success: true, 
-      id: "inv_" + Math.random().toString(36).substr(2, 9),
+      id: "inv_" + Math.random().toString(36).substring(2, 11),
       status: "pending",
       message: "Background check invitation created and linked to " + candidateEmail
     });
   } catch (error: any) {
     console.error("Background Check Error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// SMS Prototype Route (Simulated via Prototype or Twilio)
+apiRouter.post("/send-sms", async (req, res) => {
+  try {
+    const { to, body } = req.body;
+    console.log(`[SMS Server] Preparing to send to ${to}: ${body}`);
+
+    // If implementing real Twilio:
+    // const twilio = (await import('twilio')).default;
+    // const client = twilio(process.env.TWILIO_SID, process.env.TWILIO_AUTH_TOKEN);
+    // await client.messages.create({ body, from: '+1...', to });
+
+    // Simulated successful delivery for Prototype
+    res.json({ success: true, message: "SMS dispatched successfully." });
+  } catch (error: any) {
+    console.error("SMS Error:", error);
     res.status(500).json({ error: error.message });
   }
 });

@@ -54,6 +54,7 @@ function getGenAI() {
 
 export default function SurveyBuilder({ user, business }: { user: any, business: any }) {
   const [surveys, setSurveys] = useState<any[]>([]);
+  const [distributionLogs, setDistributionLogs] = useState<any[]>([]);
   const [isCreating, setIsCreating] = useState(false);
   const [currentSurvey, setCurrentSurvey] = useState<any>(null);
   const [activeTab, setActiveTab] = useState<'build' | 'settings' | 'share'>('build');
@@ -106,7 +107,16 @@ export default function SurveyBuilder({ user, business }: { user: any, business:
       setCustomers(docs);
       setSelectedCustomerIds(new Set(docs.map((d: any) => d.id)));
     });
-    return () => unsubscribe();
+
+    const dQuery = query(collection(db, 'distributionLogs'), where('businessId', '==', business.id));
+    const dUnsub = onSnapshot(dQuery, (s) => {
+      setDistributionLogs(s.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
+
+    return () => {
+      unsubscribe();
+      dUnsub();
+    }
   }, [business]);
 
   const handleSendDistribution = async (type: 'email' | 'sms') => {
@@ -118,11 +128,12 @@ export default function SurveyBuilder({ user, business }: { user: any, business:
       
       // Process distribution to each selected customer
       const batch = selectedCustomers.map(async (customer) => {
+        let status = 'failed';
         if (type === 'email' && customer.email) {
           const body = distributionMessages.email + `\n\nLink: https://bizcompana.com?survey=${currentSurvey.id}`;
           
           try {
-            await fetch('/api/send-email', {
+            const result = await fetch('/api/send-email', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -131,14 +142,37 @@ export default function SurveyBuilder({ user, business }: { user: any, business:
                 text: body
               })
             });
-            console.log(`Sent email via SendGrid to ${customer.email}`);
+            if (result.ok) status = 'delivered';
           } catch (e) {
             console.error('Failed to send email:', e);
           }
         } else if (type === 'sms' && customer.phone) {
-          // SMS backend isn't set up yet, keep simulating
-          console.log(`Sending SMS to ${customer.phone}: ${distributionMessages.sms}`);
+          const body = distributionMessages.sms + ` https://bizcompana.com?survey=${currentSurvey.id}`;
+          try {
+            const result = await fetch('/api/send-sms', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                to: customer.phone,
+                body: body
+              })
+            });
+            if (result.ok) status = 'delivered';
+          } catch (e) {
+            console.error('Failed to send SMS:', e);
+          }
         }
+
+        // Log the distribution attempt
+        await addDoc(collection(db, 'distributionLogs'), {
+          surveyId: currentSurvey.id,
+          businessId: business.id,
+          customerId: customer.id,
+          type,
+          status,
+          contactMethod: type === 'email' ? customer.email : customer.phone,
+          sentAt: new Date().toISOString()
+        });
       });
 
       await Promise.all(batch);
@@ -200,7 +234,7 @@ export default function SurveyBuilder({ user, business }: { user: any, business:
       - placeholder: string (optional, for text/long_text types)`;
       
       const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
+        model: "gemini-2.5-flash",
         contents: prompt,
       });
 
@@ -795,7 +829,17 @@ export default function SurveyBuilder({ user, business }: { user: any, business:
                               </select>
                               {q.logic?.dependsOnId && (
                                 <>
-                                  <span className="text-stone-500">is</span>
+                                  <select
+                                    value={q.logic.condition || 'equals'}
+                                    onChange={(e) => updateQuestion(q.id, { logic: { ...q.logic, condition: e.target.value } })}
+                                    className="bg-stone-50 border-none rounded-lg py-1.5 px-3 text-xs font-bold text-stone-600 outline-none"
+                                  >
+                                    <option value="equals">is exactly</option>
+                                    <option value="not_equals">is not</option>
+                                    <option value="greater_than">is greater than</option>
+                                    <option value="less_than">is less than</option>
+                                    <option value="contains">contains</option>
+                                  </select>
                                   <input 
                                     type="text" 
                                     placeholder="Answer value..."
@@ -981,7 +1025,9 @@ export default function SurveyBuilder({ user, business }: { user: any, business:
                         </div>
                         <div className="max-h-48 overflow-y-auto border border-stone-100 rounded-2xl bg-stone-50 p-2 space-y-1">
                           {customers.length === 0 && <p className="text-xs text-stone-500 p-2 text-center">No customers found in directory.</p>}
-                          {customers.map((c) => (
+                          {customers.map((c) => {
+                            const dl = distributionLogs.find(l => l.surveyId === currentSurvey.id && l.customerId === c.id && l.type === 'email');
+                            return (
                             <label key={c.id} className="flex items-center gap-3 p-2 hover:bg-white rounded-xl cursor-pointer transition-colors border border-transparent hover:border-stone-100">
                               <input 
                                 type="checkbox"
@@ -998,8 +1044,13 @@ export default function SurveyBuilder({ user, business }: { user: any, business:
                                 <p className="text-sm font-bold text-stone-900 truncate">{c.name}</p>
                                 <p className="text-[10px] text-stone-500 truncate">{c.email || 'No email'}</p>
                               </div>
+                              {dl && (
+                                <div className={cn("px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider", dl.status === 'delivered' ? "bg-emerald-50 text-emerald-600" : "bg-red-50 text-red-600")}>
+                                  {dl.status}
+                                </div>
+                              )}
                             </label>
-                          ))}
+                          )})}
                         </div>
                       </div>
 
@@ -1064,7 +1115,9 @@ export default function SurveyBuilder({ user, business }: { user: any, business:
                         </div>
                         <div className="max-h-48 overflow-y-auto border border-stone-100 rounded-2xl bg-stone-50 p-2 space-y-1">
                           {customers.length === 0 && <p className="text-xs text-stone-500 p-2 text-center">No customers found in directory.</p>}
-                          {customers.map((c) => (
+                          {customers.map((c) => {
+                            const dl = distributionLogs.find(l => l.surveyId === currentSurvey.id && l.customerId === c.id && l.type === 'sms');
+                            return (
                             <label key={c.id} className="flex items-center gap-3 p-2 hover:bg-white rounded-xl cursor-pointer transition-colors border border-transparent hover:border-stone-100">
                               <input 
                                 type="checkbox"
@@ -1081,8 +1134,13 @@ export default function SurveyBuilder({ user, business }: { user: any, business:
                                 <p className="text-sm font-bold text-stone-900 truncate">{c.name}</p>
                                 <p className="text-[10px] text-stone-500 truncate">{c.phone || 'No phone'}</p>
                               </div>
+                              {dl && (
+                                <div className={cn("px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider", dl.status === 'delivered' ? "bg-emerald-50 text-emerald-600" : "bg-red-50 text-red-600")}>
+                                  {dl.status}
+                                </div>
+                              )}
                             </label>
-                          ))}
+                          )})}
                         </div>
                       </div>
 
@@ -1097,7 +1155,7 @@ export default function SurveyBuilder({ user, business }: { user: any, business:
                       <div className="p-4 bg-stone-50 rounded-2xl border border-stone-100">
                         <p className="text-[10px] font-bold text-stone-400 uppercase tracking-widest mb-2">Preview</p>
                         <div className="bg-stone-900 text-white p-3 rounded-2xl rounded-bl-none max-w-[80%]">
-                          <p className="text-xs">{distributionMessages.sms} {window.location.origin}?survey={currentSurvey.id}</p>
+                          <p className="text-xs">{distributionMessages.sms} https://bizcompana.com?survey={currentSurvey.id}</p>
                         </div>
                       </div>
                       <button 
@@ -1149,11 +1207,11 @@ export default function SurveyBuilder({ user, business }: { user: any, business:
                         <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">IFrame Code</label>
                         <div className="relative">
                           <pre className="w-full bg-stone-900 text-stone-300 rounded-2xl p-4 text-[10px] font-mono overflow-x-auto">
-                            {`<iframe \n  src="${window.location.origin}?survey=${currentSurvey.id}" \n  width="${iframeWidth}" \n  height="${iframeHeight}" \n  frameborder="0"\n></iframe>`}
+                            {`<iframe \n  src="https://bizcompana.com?survey=${currentSurvey.id}" \n  width="${iframeWidth}" \n  height="${iframeHeight}" \n  frameborder="0"\n></iframe>`}
                           </pre>
                           <button 
                             onClick={() => {
-                              navigator.clipboard.writeText(`<iframe src="${window.location.origin}?survey=${currentSurvey.id}" width="${iframeWidth}" height="${iframeHeight}" frameborder="0"></iframe>`);
+                              navigator.clipboard.writeText(`<iframe src="https://bizcompana.com?survey=${currentSurvey.id}" width="${iframeWidth}" height="${iframeHeight}" frameborder="0"></iframe>`);
                             }}
                             className="absolute top-2 right-2 p-2 bg-white/10 text-white rounded-lg hover:bg-white/20"
                           >

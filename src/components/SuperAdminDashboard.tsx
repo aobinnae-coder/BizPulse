@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../lib/firebase';
 import { collection, query, onSnapshot, orderBy, getDocs, doc, updateDoc } from 'firebase/firestore';
-import { Users, Building2, CreditCard, Activity, Search, ExternalLink, ShieldCheck, TrendingUp, DollarSign, XCircle, CheckCircle2 } from 'lucide-react';
+import { Users, Building2, CreditCard, Activity, Search, ExternalLink, ShieldCheck, TrendingUp, DollarSign, XCircle, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 export default function SuperAdminDashboard({ user }: { user: any }) {
@@ -11,6 +11,7 @@ export default function SuperAdminDashboard({ user }: { user: any }) {
   const [orders, setOrders] = useState<any[]>([]);
   const [search, setSearch] = useState('');
   const [isLoading, setIsLoading] = useState(true);
+  const [suspendModalVisibility, setSuspendModalVisibility] = useState<{ isOpen: boolean, businessId: string | null, currentStatus: boolean }>({ isOpen: false, businessId: null, currentStatus: false });
 
   useEffect(() => {
     // Only load if exactly the super admin
@@ -47,15 +48,21 @@ export default function SuperAdminDashboard({ user }: { user: any }) {
     );
   }
 
-  const toggleSuspend = async (businessId: string, currentStatus: boolean) => {
-    if (!confirm(`Are you sure you want to ${currentStatus ? 'unsuspend' : 'suspend'} this business?`)) return;
+  const requestSuspendToggle = (businessId: string, currentStatus: boolean) => {
+    setSuspendModalVisibility({ isOpen: true, businessId, currentStatus });
+  };
+
+  const executeSuspendToggle = async () => {
+    if (!suspendModalVisibility.businessId) return;
+    const { businessId, currentStatus } = suspendModalVisibility;
     try {
       await updateDoc(doc(db, 'businesses', businessId), {
         isSuspended: !currentStatus
       });
+      setSuspendModalVisibility({ isOpen: false, businessId: null, currentStatus: false });
     } catch (error) {
       console.error("Failed to toggle suspension:", error);
-      alert("Failed to update suspension status.");
+      alert(`Failed to ${currentStatus ? 'unsuspend' : 'suspend'} user account.`);
     }
   };
 
@@ -178,11 +185,11 @@ export default function SuperAdminDashboard({ user }: { user: any }) {
                       <td className="px-6 py-4 text-right">
                         <div className="flex items-center justify-end gap-2">
                           <button
-                            onClick={() => toggleSuspend(b.id, b.isSuspended || false)}
-                            className={`p-2 rounded-lg inline-flex ${b.isSuspended ? 'bg-red-50 text-red-600 hover:bg-red-100' : 'bg-stone-100 text-stone-400 hover:text-red-600 hover:bg-red-50'}`}
-                            title={b.isSuspended ? "Unsuspend Business" : "Suspend Business"}
+                            onClick={() => requestSuspendToggle(b.id, b.isSuspended || false)}
+                            className={`px-3 py-2 rounded-lg inline-flex items-center gap-2 text-xs font-bold transition-all ${b.isSuspended ? 'bg-stone-100 text-stone-700 hover:bg-stone-200' : 'bg-red-50 text-red-600 hover:bg-red-100'}`}
+                            title={b.isSuspended ? "Restore User Account" : "Force Suspend User"}
                           >
-                            {b.isSuspended ? <CheckCircle2 className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
+                            {b.isSuspended ? <><CheckCircle2 className="w-4 h-4" /> Restore Access</> : <><AlertTriangle className="w-4 h-4" /> Force Suspend User</>}
                           </button>
                           <a 
                             href={'/?business=' + b.id}
@@ -210,6 +217,41 @@ export default function SuperAdminDashboard({ user }: { user: any }) {
             </div>
           </div>
         </>
+      )}
+
+      {suspendModalVisibility.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/40 backdrop-blur-sm">
+          <div className="bg-white rounded-[32px] p-8 max-w-md w-full shadow-2xl border border-stone-200">
+            <div className="flex flex-col items-center text-center">
+              <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mb-6 shadow-sm ${suspendModalVisibility.currentStatus ? 'bg-stone-100 text-stone-800' : 'bg-red-100 text-red-600'}`}>
+                {suspendModalVisibility.currentStatus ? <CheckCircle2 className="w-8 h-8" /> : <AlertTriangle className="w-8 h-8" />}
+              </div>
+              <h2 className="text-2xl font-black text-stone-900 mb-2">
+                {suspendModalVisibility.currentStatus ? "Restore Access?" : "Force Suspend User?"}
+              </h2>
+              <p className="text-stone-500 mb-8 text-sm px-4">
+                {suspendModalVisibility.currentStatus 
+                  ? "This will restore the user's access to their account and dashboard. They will be able to log in normally." 
+                  : "This will immediately revoke access for the user. They will be met with a suspension lockout screen upon next login or refresh. Their public storefront will also be disabled."}
+              </p>
+              
+              <div className="flex items-center gap-3 w-full">
+                <button
+                  onClick={() => setSuspendModalVisibility({ isOpen: false, businessId: null, currentStatus: false })}
+                  className="flex-1 py-3 px-4 bg-stone-100 text-stone-700 font-bold rounded-xl hover:bg-stone-200 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={executeSuspendToggle}
+                  className={`flex-1 py-3 px-4 text-white font-bold rounded-xl transition-colors ${suspendModalVisibility.currentStatus ? 'bg-stone-900 hover:bg-stone-800' : 'bg-red-600 hover:bg-red-700'}`}
+                >
+                  {suspendModalVisibility.currentStatus ? "Restore User" : "Suspend User"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

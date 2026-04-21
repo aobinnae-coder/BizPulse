@@ -10,6 +10,10 @@ export default function CustomerDirectory({ user, business }: { user: any, busin
   const [search, setSearch] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [newCustomer, setNewCustomer] = useState({ name: '', email: '', phone: '', tags: '' });
+  const [showBulkEmailModal, setShowBulkEmailModal] = useState(false);
+  const [bulkEmailSubject, setBulkEmailSubject] = useState('');
+  const [bulkEmailBody, setBulkEmailBody] = useState('');
+  const [isSendingBulkEmail, setIsSendingBulkEmail] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [actionFeedback, setActionFeedback] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
   
@@ -138,6 +142,43 @@ export default function CustomerDirectory({ user, business }: { user: any, busin
       setActionFeedback({ message: 'Failed to update tags.', type: 'error' });
     } finally {
       setIsBulkActionLoading(false);
+    }
+  };
+
+  const handleSendBulkEmail = async () => {
+    if (selectedIds.size === 0 || !bulkEmailSubject || !bulkEmailBody) return;
+    setIsSendingBulkEmail(true);
+    let successCount = 0;
+    try {
+      const selectedCustomers = customers.filter(c => selectedIds.has(c.id));
+      const batch = selectedCustomers.map(async (customer) => {
+        if (customer.email) {
+          try {
+            await fetch('/api/send-email', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                to: customer.email,
+                subject: bulkEmailSubject,
+                text: bulkEmailBody
+              })
+            });
+            successCount++;
+          } catch (e) {
+            console.error('Failed to send email to', customer.email, e);
+          }
+        }
+      });
+      await Promise.all(batch);
+      setActionFeedback({ message: `Successfully sent email to ${successCount} customers.`, type: 'success' });
+      setShowBulkEmailModal(false);
+      setBulkEmailSubject('');
+      setBulkEmailBody('');
+    } catch (error) {
+      console.error(error);
+      setActionFeedback({ message: 'Failed to send bulk email.', type: 'error' });
+    } finally {
+      setIsSendingBulkEmail(false);
     }
   };
 
@@ -363,7 +404,7 @@ export default function CustomerDirectory({ user, business }: { user: any, busin
                 </select>
               </div>
               <button 
-                onClick={() => alert(`Sending email to ${selectedIds.size} customers...`)}
+                onClick={() => setShowBulkEmailModal(true)}
                 className="flex items-center gap-2 text-xs font-bold hover:text-amber-400 transition-colors"
               >
                 <Send className="w-4 h-4" /> Email
@@ -378,6 +419,56 @@ export default function CustomerDirectory({ user, business }: { user: any, busin
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Bulk Email Modal */}
+      {showBulkEmailModal && (
+        <div className="fixed inset-0 bg-stone-900/20 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-md rounded-[32px] p-8 shadow-2xl border border-stone-200">
+            <h2 className="text-xl font-bold mb-2">Compose Email</h2>
+            <p className="text-sm text-stone-500 mb-6">Sending to {selectedIds.size} selected customer(s).</p>
+            <div className="space-y-4">
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Subject Line</label>
+                <input 
+                  type="text" 
+                  value={bulkEmailSubject}
+                  onChange={e => setBulkEmailSubject(e.target.value)}
+                  className="w-full p-4 bg-stone-50 rounded-2xl outline-none focus:ring-2 focus:ring-stone-900"
+                  placeholder="Special offer for you!"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Email Body</label>
+                <textarea 
+                  value={bulkEmailBody}
+                  onChange={e => setBulkEmailBody(e.target.value)}
+                  className="w-full p-4 bg-stone-50 rounded-2xl outline-none focus:ring-2 focus:ring-stone-900 h-32 resize-none"
+                  placeholder="Type your message here..."
+                />
+              </div>
+            </div>
+            <div className="flex gap-3 mt-8">
+              <button 
+                onClick={() => setShowBulkEmailModal(false)}
+                className="flex-1 px-4 py-3 bg-stone-100 text-stone-900 rounded-xl font-bold hover:bg-stone-200 transition-colors"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={handleSendBulkEmail}
+                disabled={isSendingBulkEmail || !bulkEmailSubject || !bulkEmailBody}
+                className="flex-1 px-4 py-3 bg-stone-900 text-white rounded-xl font-bold hover:bg-stone-800 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {isSendingBulkEmail ? (
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                ) : (
+                  <>Send Email <Send className="w-4 h-4" /></>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showAddModal && (
         <div className="fixed inset-0 bg-stone-900/20 backdrop-blur-sm z-50 flex items-center justify-center p-4">
