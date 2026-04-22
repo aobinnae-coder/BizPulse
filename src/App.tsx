@@ -53,6 +53,7 @@ export default function App() {
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [currentView, setCurrentView] = useState<View>('dashboard');
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
+  const [selectedSurveyId, setSelectedSurveyId] = useState<string | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [business, setBusiness] = useState<any>(null);
   const [isBusinessLoading, setIsBusinessLoading] = useState(true);
@@ -306,18 +307,28 @@ export default function App() {
               {currentView === 'dashboard' && <Dashboard user={user} business={business} onNavigate={(v) => setCurrentView(v as View)} />}
               {currentView === 'inventory' && <InventoryManager user={user} business={business} />}
               {currentView === 'orders' && <OrderManager user={user} business={business} initialOrderId={selectedOrderId} />}
-              {currentView === 'surveys' && <SurveyBuilder user={user} business={business} />}
+              {currentView === 'surveys' && (
+                <SurveyBuilder 
+                  user={user} 
+                  business={business} 
+                  onViewResponses={(id) => {
+                    setSelectedSurveyId(id);
+                    setCurrentView('analytics');
+                  }} 
+                />
+              )}
               {currentView === 'feedback' && (
                 <FeedbackInbox 
                   user={user} 
                   business={business} 
+                  initialSurveyId={selectedSurveyId}
                   onViewOrder={(id) => {
                     setSelectedOrderId(id);
                     setCurrentView('orders');
                   }} 
                 />
               )}
-              {currentView === 'analytics' && <Analytics user={user} business={business} />}
+              {currentView === 'analytics' && <Analytics user={user} business={business} initialSurveyId={selectedSurveyId} />}
               {currentView === 'actions' && <ActionBoard user={user} business={business} />}
               {currentView === 'customers' && <CustomerDirectory user={user} business={business} />}
               {currentView === 'coupons' && <CouponManager user={user} business={business} />}

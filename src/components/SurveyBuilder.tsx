@@ -52,7 +52,7 @@ function getGenAI() {
   return new GoogleGenAI({ apiKey });
 }
 
-export default function SurveyBuilder({ user, business }: { user: any, business: any }) {
+export default function SurveyBuilder({ user, business, onViewResponses }: { user: any, business: any, onViewResponses?: (id: string) => void }) {
   const [surveys, setSurveys] = useState<any[]>([]);
   const [distributionLogs, setDistributionLogs] = useState<any[]>([]);
   const [isCreating, setIsCreating] = useState(false);
@@ -804,11 +804,13 @@ export default function SurveyBuilder({ user, business }: { user: any, business:
 
                           {/* Conditional Logic UI */}
                           <div className="pt-4 border-t border-stone-100 mt-4">
-                            <div className="flex items-center gap-2 mb-2">
-                              <span className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Conditional Logic</span>
+                            <div className="flex items-center gap-2 mb-3">
+                              <span className="text-[10px] font-bold text-stone-400 uppercase tracking-widest bg-stone-100 flex items-center gap-1.5 px-2 py-1 rounded w-fit">
+                                <Settings className="w-3 h-3" /> Conditional Logic
+                              </span>
                             </div>
-                            <div className="flex flex-wrap items-center gap-2 text-sm">
-                              <span className="text-stone-500">Show this question if</span>
+                            <div className="flex flex-wrap items-center gap-2 text-sm bg-stone-50 p-3 rounded-xl border border-stone-100">
+                              <span className="text-stone-500 font-medium">Show this question if</span>
                               <select 
                                 value={q.logic?.dependsOnId || ''}
                                 onChange={(e) => {
@@ -820,19 +822,20 @@ export default function SurveyBuilder({ user, business }: { user: any, business:
                                     updateQuestion(q.id, { logic: { ...q.logic, dependsOnId, condition: 'equals', value: '' } });
                                   }
                                 }}
-                                className="bg-stone-50 border-none rounded-lg py-1.5 px-3 text-xs font-bold text-stone-600 outline-none"
+                                className="bg-white border border-stone-200 rounded-lg py-1.5 px-3 text-xs font-bold text-stone-700 outline-none focus:ring-2 focus:ring-stone-900 flex-1 min-w-[200px]"
                               >
-                                <option value="">Always show</option>
+                                <option value="">Always show (No conditions)</option>
                                 {currentSurvey.questions.filter((prevQ: any) => prevQ.id !== q.id).map((prevQ: any) => (
-                                  <option key={prevQ.id} value={prevQ.id}>{prevQ.label || 'Untitled Question'}</option>
+                                  <option key={prevQ.id} value={prevQ.id}>Q: {prevQ.label || 'Untitled Question'}</option>
                                 ))}
                               </select>
+                              
                               {q.logic?.dependsOnId && (
                                 <>
                                   <select
                                     value={q.logic.condition || 'equals'}
                                     onChange={(e) => updateQuestion(q.id, { logic: { ...q.logic, condition: e.target.value } })}
-                                    className="bg-stone-50 border-none rounded-lg py-1.5 px-3 text-xs font-bold text-stone-600 outline-none"
+                                    className="bg-white border border-stone-200 rounded-lg py-1.5 px-3 text-xs font-bold text-stone-700 outline-none focus:ring-2 focus:ring-stone-900"
                                   >
                                     <option value="equals">is exactly</option>
                                     <option value="not_equals">is not</option>
@@ -840,13 +843,47 @@ export default function SurveyBuilder({ user, business }: { user: any, business:
                                     <option value="less_than">is less than</option>
                                     <option value="contains">contains</option>
                                   </select>
-                                  <input 
-                                    type="text" 
-                                    placeholder="Answer value..."
-                                    value={q.logic.value || ''}
-                                    onChange={(e) => updateQuestion(q.id, { logic: { ...q.logic, value: e.target.value } })}
-                                    className="bg-stone-50 border-none rounded-lg py-1.5 px-3 text-xs font-bold text-stone-600 outline-none w-32"
-                                  />
+                                  
+                                  {/* Dynamic Input based on target question type */}
+                                  {(() => {
+                                    const targetQuestion = currentSurvey.questions.find((tq: any) => tq.id === q.logic?.dependsOnId);
+                                    if (targetQuestion?.type === 'choice' || targetQuestion?.type === 'ranking') {
+                                      return (
+                                        <select
+                                          value={q.logic.value || ''}
+                                          onChange={(e) => updateQuestion(q.id, { logic: { ...q.logic, value: e.target.value } })}
+                                          className="bg-white border border-stone-200 rounded-lg py-1.5 px-3 text-xs font-bold text-stone-700 outline-none focus:ring-2 focus:ring-stone-900 min-w-[150px]"
+                                        >
+                                          <option value="">Select option...</option>
+                                          {(targetQuestion.options || []).map((opt: string, i: number) => (
+                                            <option key={i} value={opt}>{opt}</option>
+                                          ))}
+                                        </select>
+                                      );
+                                    }
+                                    if (targetQuestion?.type === 'toggle') {
+                                      return (
+                                        <select
+                                          value={q.logic.value || ''}
+                                          onChange={(e) => updateQuestion(q.id, { logic: { ...q.logic, value: e.target.value } })}
+                                          className="bg-white border border-stone-200 rounded-lg py-1.5 px-3 text-xs font-bold text-stone-700 outline-none focus:ring-2 focus:ring-stone-900"
+                                        >
+                                          <option value="">Select option...</option>
+                                          <option value="Yes">Yes</option>
+                                          <option value="No">No</option>
+                                        </select>
+                                      );
+                                    }
+                                    return (
+                                      <input 
+                                        type="text" 
+                                        placeholder="Answer value..."
+                                        value={q.logic.value || ''}
+                                        onChange={(e) => updateQuestion(q.id, { logic: { ...q.logic, value: e.target.value } })}
+                                        className="bg-white border border-stone-200 rounded-lg py-1.5 px-3 text-xs font-bold text-stone-700 outline-none focus:ring-2 focus:ring-stone-900 min-w-[150px]"
+                                      />
+                                    );
+                                  })()}
                                 </>
                               )}
                             </div>
@@ -889,6 +926,26 @@ export default function SurveyBuilder({ user, business }: { user: any, business:
                     <div className={cn(
                       "absolute top-1 w-4 h-4 bg-white rounded-full transition-transform",
                       currentSurvey.settings.requireContact ? "translate-x-7" : "translate-x-1"
+                    )} />
+                  </button>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-lg font-bold text-stone-900">Require Verification (OTP)</h3>
+                    <p className="text-sm text-stone-500">Only valid verified numbers/emails can submit responses.</p>
+                  </div>
+                  <button 
+                    disabled={!currentSurvey.settings.requireContact}
+                    onClick={() => setCurrentSurvey({ ...currentSurvey, settings: { ...currentSurvey.settings, requireVerification: !currentSurvey.settings.requireVerification } })}
+                    className={cn(
+                      "w-12 h-6 rounded-full transition-colors relative",
+                      currentSurvey.settings.requireContact ? (currentSurvey.settings.requireVerification ? "bg-stone-900" : "bg-stone-200") : "bg-stone-100 opacity-50 cursor-not-allowed"
+                    )}
+                  >
+                    <div className={cn(
+                      "absolute top-1 w-4 h-4 bg-white rounded-full transition-transform",
+                      currentSurvey.settings.requireVerification && currentSurvey.settings.requireContact ? "translate-x-7" : "translate-x-1"
                     )} />
                   </button>
                 </div>
@@ -1527,9 +1584,21 @@ export default function SurveyBuilder({ user, business }: { user: any, business:
                   onClick={() => {
                     setCurrentSurvey(survey);
                     setIsCreating(true);
+                    setActiveTab('share');
+                  }}
+                  className="p-2 text-stone-400 hover:text-stone-900 hover:bg-stone-50 rounded-lg"
+                  title="Share"
+                >
+                  <Send className="w-4 h-4" />
+                </button>
+                <button 
+                  onClick={() => {
+                    setCurrentSurvey(survey);
+                    setIsCreating(true);
                     setActiveTab('build');
                   }}
                   className="p-2 text-stone-400 hover:text-stone-900 hover:bg-stone-50 rounded-lg"
+                  title="Edit"
                 >
                   <Settings className="w-4 h-4" />
                 </button>
@@ -1540,6 +1609,7 @@ export default function SurveyBuilder({ user, business }: { user: any, business:
                     }
                   }}
                   className="p-2 text-stone-400 hover:text-red-500 hover:bg-red-50 rounded-lg"
+                  title="Delete"
                 >
                   <Trash2 className="w-4 h-4" />
                 </button>
@@ -1553,16 +1623,14 @@ export default function SurveyBuilder({ user, business }: { user: any, business:
                   <Users className="w-4 h-4" />
                   <span className="text-xs font-medium">{survey.responseCount || 0} responses</span>
                 </div>
-                <button 
-                  onClick={() => {
-                    setCurrentSurvey(survey);
-                    setIsCreating(true);
-                    setActiveTab('share');
-                  }}
-                  className="text-xs font-bold text-stone-900 flex items-center gap-1 hover:underline"
-                >
-                  Share <ChevronRight className="w-3 h-3" />
-                </button>
+                {onViewResponses && (
+                  <button 
+                    onClick={() => onViewResponses(survey.id)}
+                    className="text-[10px] font-bold text-stone-900 uppercase tracking-widest flex items-center gap-1 hover:bg-stone-100 px-3 py-1.5 rounded-lg transition-colors"
+                  >
+                    View Responses <ChevronRight className="w-3 h-3" />
+                  </button>
+                )}
               </div>
               {survey.lastDistributed && (
                 <div className="flex items-center gap-1.5 text-[10px] font-bold text-stone-400 uppercase tracking-widest">

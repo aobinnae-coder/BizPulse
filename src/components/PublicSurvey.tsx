@@ -13,9 +13,15 @@ export default function PublicSurvey({ surveyId }: { surveyId: string }) {
   const [loading, setLoading] = useState(true);
   const [currentStep, setCurrentStep] = useState(0);
   const [answers, setAnswers] = useState<Record<string, any>>({});
-  const [contact, setContact] = useState({ name: '', email: '' });
+  const [contact, setContact] = useState({ name: '', email: '', phone: '' });
   const [submitted, setSubmitted] = useState(false);
   const [orderId, setOrderId] = useState<string | null>(null);
+  
+  const [verificationPending, setVerificationPending] = useState(false);
+  const [verificationType, setVerificationType] = useState<'email' | 'phone' | null>(null);
+  const [expectedCode, setExpectedCode] = useState('');
+  const [enteredCode, setEnteredCode] = useState('');
+  const [isVerified, setIsVerified] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -44,7 +50,68 @@ export default function PublicSurvey({ surveyId }: { surveyId: string }) {
     fetchSurvey();
   }, [surveyId]);
 
+  const initiateVerification = async () => {
+    if (!survey?.settings?.requireContact) {
+      await forceSubmit();
+      return;
+    }
+
+    // Determine what to verify
+    let typeToVerify: 'email' | 'phone' | null = null;
+    if (contact.email) typeToVerify = 'email';
+    else if (contact.phone) typeToVerify = 'phone';
+    
+    if (!typeToVerify) {
+      alert('Please enter an email or phone number to verify.');
+      return;
+    }
+
+    setVerificationType(typeToVerify);
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    setExpectedCode(code);
+    setVerificationPending(true);
+
+    try {
+      if (typeToVerify === 'email') {
+        const text = `Your BizCompana survey verification code is: ${code}`;
+        await fetch('/api/send-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ to: contact.email, subject: `Your Verification Code`, text })
+        });
+      } else if (typeToVerify === 'phone') {
+        const body = `Your BizCompana survey verification code is: ${code}`;
+        await fetch('/api/send-sms', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ to: contact.phone, body })
+        });
+      }
+    } catch (e) {
+      console.error('Failed to send verification code:', e);
+    }
+  };
+
+  const handleVerify = async () => {
+    if (enteredCode === expectedCode) {
+      setIsVerified(true);
+      setVerificationPending(false);
+      await forceSubmit();
+    } else {
+      alert("Invalid code. Please try again.");
+    }
+  };
+
   const handleSubmit = async () => {
+    if (!survey) return;
+    if (survey.settings?.requireContact && survey.settings?.requireVerification && !isVerified) {
+      await initiateVerification();
+      return;
+    }
+    await forceSubmit();
+  };
+
+  const forceSubmit = async () => {
     if (!survey) return;
     const scores = Object.values(answers).filter(v => typeof v === 'number') as number[];
     const avgScore = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : 3;
@@ -52,14 +119,17 @@ export default function PublicSurvey({ surveyId }: { surveyId: string }) {
 
     await addDoc(collection(db, 'responses'), {
       surveyId, businessId: survey.businessId, ownerUid: business?.ownerUid || null, answers, respondent: contact,
-      sentiment, score: avgScore, status: 'new', orderId, createdAt: new Date().toISOString()
+      sentiment, score: avgScore, status: 'new', orderId, createdAt: new Date().toISOString(),
+      verifiedAt: isVerified ? new Date().toISOString() : null,
+      verificationMethod: isVerified ? verificationType : null
     });
 
     // Update customer record
-    if (contact.email) {
+    if (contact.email || contact.phone) {
       await updateOrCreateCustomer(survey.businessId, {
         name: contact.name,
         email: contact.email,
+        phone: contact.phone,
         score: avgScore
       }, business?.ownerUid);
     }
@@ -147,14 +217,37 @@ export default function PublicSurvey({ surveyId }: { surveyId: string }) {
             ) : (
               <div className="space-y-6">
                 <h1 className="text-2xl font-bold text-center">Contact Info</h1>
-                <input type="text" placeholder="Name" value={contact.name} onChange={e => setContact({...contact, name: e.target.value})} className="w-full p-4 bg-stone-50 rounded-2xl outline-none" />
-                <input type="email" placeholder="Email" value={contact.email} onChange={e => setContact({...contact, email: e.target.value})} className="w-full p-4 bg-stone-50 rounded-2xl outline-none" />
+                
+                {verificationPending ? (
+                  <div className="space-y-4">
+                    <p className="text-sm text-stone-500 text-center">We sent a 6-digit code to your {verificationType}. Please enter it below to verify.</p>
+                    <input 
+                      type="text" 
+                      placeholder="6-digit code" 
+                      value={enteredCode} 
+                      onChange={e => setEnteredCode(e.target.value)} 
+                      className="w-full p-4 bg-stone-50 rounded-2xl outline-none font-mono text-center text-xl tracking-[0.5em]" 
+                      maxLength={6}
+                    />
+                    <button onClick={handleVerify} className="w-full py-4 bg-stone-900 text-white rounded-2xl font-bold">Verify & Submit</button>
+                    <button onClick={() => setVerificationPending(false)} className="w-full py-4 text-stone-500 font-bold hover:text-stone-900">Cancel</button>
+                  </div>
+                ) : (
+                  <>
+                    <input type="text" placeholder="Name" value={contact.name} onChange={e => setContact({...contact, name: e.target.value})} className="w-full p-4 bg-stone-50 rounded-2xl outline-none" />
+                    <input type="email" placeholder="Email" value={contact.email} onChange={e => setContact({...contact, email: e.target.value})} className="w-full p-4 bg-stone-50 rounded-2xl outline-none" />
+                    <input type="tel" placeholder="Phone Number" value={contact.phone} onChange={e => setContact({...contact, phone: e.target.value})} className="w-full p-4 bg-stone-50 rounded-2xl outline-none" />
+                  </>
+                )}
               </div>
             )}
-            <div className="mt-12 flex justify-between">
-              <button disabled={currentStep === 0} onClick={() => setCurrentStep(currentStep - 1)} className="flex items-center gap-2 text-stone-400 disabled:opacity-0 font-bold"><ChevronLeft /> Back</button>
-              {currentStep === totalSteps - 1 ? <button onClick={handleSubmit} className="px-8 py-4 bg-stone-900 text-white rounded-2xl font-bold">Submit</button> : <button onClick={() => setCurrentStep(currentStep + 1)} className="px-8 py-4 bg-stone-900 text-white rounded-2xl font-bold flex items-center gap-2">Next <ChevronRight /></button>}
-            </div>
+            
+            {!verificationPending && (
+              <div className="mt-12 flex justify-between">
+                <button disabled={currentStep === 0} onClick={() => setCurrentStep(currentStep - 1)} className="flex items-center gap-2 text-stone-400 disabled:opacity-0 font-bold"><ChevronLeft /> Back</button>
+                {currentStep === totalSteps - 1 ? <button onClick={handleSubmit} className="px-8 py-4 bg-stone-900 text-white rounded-2xl font-bold">Submit</button> : <button onClick={() => setCurrentStep(currentStep + 1)} className="px-8 py-4 bg-stone-900 text-white rounded-2xl font-bold flex items-center gap-2">Next <ChevronRight /></button>}
+              </div>
+            )}
           </motion.div>
         </AnimatePresence>
       </div>

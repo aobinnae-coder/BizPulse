@@ -9,7 +9,7 @@ import { TrendingUp, Users, Star, MessageSquare, ArrowUpRight, ArrowDownRight, Z
 import { cn } from '../lib/utils';
 import { format, subDays, isAfter } from 'date-fns';
 
-export default function Analytics({ user, business }: { user: any, business: any }) {
+export default function Analytics({ user, business, initialSurveyId }: { user: any, business: any, initialSurveyId?: string | null }) {
   const [responses, setResponses] = useState<any[]>([]);
   const [orders, setOrders] = useState<any[]>([]);
   const [surveys, setSurveys] = useState<any[]>([]);
@@ -17,7 +17,7 @@ export default function Analytics({ user, business }: { user: any, business: any
   const [dateRange, setDateRange] = useState<'7d' | '30d' | 'all'>('30d');
   
   // New Filter States
-  const [filterSurveyId, setFilterSurveyId] = useState<string>('all');
+  const [filterSurveyId, setFilterSurveyId] = useState<string>(initialSurveyId || 'all');
   const [filterSentiment, setFilterSentiment] = useState<string>('all');
   const [filterScore, setFilterScore] = useState<string>('all');
 
@@ -121,6 +121,34 @@ export default function Analytics({ user, business }: { user: any, business: any
       negative: dayResponses.filter(r => r.sentiment === 'negative').length,
     };
   }).reverse();
+
+  // Create question type stats based on replies
+  const questionTypeStats = React.useMemo(() => {
+    const qTypes: Record<string, string> = {};
+    surveys.forEach(s => {
+      s.questions?.forEach((q: any) => {
+        qTypes[q.id] = q.type;
+      });
+    });
+
+    const stats: Record<string, number> = {};
+    filteredResponses.forEach(r => {
+      if (r.answers) {
+        Object.keys(r.answers).forEach(qId => {
+          const type = qTypes[qId] || 'unknown';
+          const val = r.answers[qId];
+          // Simple validation: is it not empty
+          if (val !== undefined && val !== '' && (Array.isArray(val) ? val.length > 0 : true)) {
+            stats[type] = (stats[type] || 0) + 1;
+          }
+        });
+      }
+    });
+
+    return Object.entries(stats).sort((a,b) => b[1] - a[1]).map(([name, value]) => ({ name, value }));
+  }, [surveys, filteredResponses]);
+
+  const COLORS = ['#10b981', '#f59e0b', '#ef4444', '#3b82f6', '#8b5cf6', '#ec4899', '#6366f1'];
 
   return (
     <div className="space-y-8">
@@ -300,6 +328,38 @@ export default function Analytics({ user, business }: { user: any, business: any
                 <div key={s.name} className="flex items-center gap-3">
                   <div className="w-3 h-3 rounded-full" style={{ backgroundColor: s.color }} />
                   <span className="text-sm font-medium text-stone-600">{s.name} ({s.value})</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white p-8 rounded-3xl border border-stone-200 shadow-sm">
+          <h3 className="text-lg font-bold text-stone-900 mb-8">Breakdown by Question Type</h3>
+          <div className="h-[300px] flex items-center">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={questionTypeStats}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={60}
+                  outerRadius={100}
+                  paddingAngle={5}
+                  dataKey="value"
+                >
+                  {questionTypeStats.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip />
+              </PieChart>
+            </ResponsiveContainer>
+            <div className="space-y-4 pr-8 max-h-full overflow-y-auto w-1/3">
+              {questionTypeStats.map((s, idx) => (
+                <div key={s.name} className="flex items-center gap-3">
+                  <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: COLORS[idx % COLORS.length] }} />
+                  <span className="text-sm font-medium text-stone-600 truncate capitalize">{s.name} ({s.value})</span>
                 </div>
               ))}
             </div>

@@ -15,10 +15,11 @@ function getGenAI() {
   return new GoogleGenAI({ apiKey });
 }
 
-export default function FeedbackInbox({ user, business, onViewOrder }: { user: any, business: any, onViewOrder?: (orderId: string) => void }) {
+export default function FeedbackInbox({ user, business, onViewOrder, initialSurveyId }: { user: any, business: any, onViewOrder?: (orderId: string) => void, initialSurveyId?: string | null }) {
   const [responses, setResponses] = useState<any[]>([]);
   const [selectedResponse, setSelectedResponse] = useState<any>(null);
   const [filter, setFilter] = useState('all');
+  const [surveyFilter, setSurveyFilter] = useState(initialSurveyId || 'all');
   const [sentimentFilter, setSentimentFilter] = useState('all');
   const [search, setSearch] = useState('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -61,6 +62,7 @@ export default function FeedbackInbox({ user, business, onViewOrder }: { user: a
   };
 
   const filteredResponses = responses.filter(r => {
+    if (surveyFilter !== 'all' && r.surveyId !== surveyFilter) return false;
     if (filter !== 'all' && r.status !== filter) return false;
     if (sentimentFilter !== 'all' && r.sentiment !== sentimentFilter) return false;
     
@@ -477,12 +479,39 @@ export default function FeedbackInbox({ user, business, onViewOrder }: { user: a
               )}
             </div>
           </>
-        ) : !aiSummary ? (
-          <div className="flex-1 flex flex-col items-center justify-center text-stone-400">
-            <MessageSquare className="w-12 h-12 mb-4 opacity-20" />
-            <p>Select a response to view details</p>
+        ) : (
+          <div className="flex-1 flex flex-col p-8 overflow-y-auto">
+            {!aiSummary ? (
+              <div className="flex-1 flex flex-col items-center justify-center text-stone-400">
+                <MessageSquare className="w-12 h-12 mb-4 opacity-20" />
+                <p className="mb-8">Select a response to view details</p>
+                
+                <div className="w-full max-w-md bg-stone-50 rounded-3xl p-6 border border-stone-100 flex flex-col items-center text-center">
+                  <h3 className="text-sm font-bold text-stone-900 mb-2">Overall Sentiment</h3>
+                  <div className="flex items-end gap-2 mb-4">
+                    <span className="text-4xl font-black text-stone-900">
+                      {filteredResponses.filter(r => typeof r.score === 'number').length 
+                        ? (filteredResponses.filter(r => typeof r.score === 'number').reduce((a, b) => a + b.score, 0) / filteredResponses.filter(r => typeof r.score === 'number').length).toFixed(1)
+                        : "N/A"}
+                    </span>
+                    {filteredResponses.filter(r => typeof r.score === 'number').length > 0 && <span className="text-stone-400 font-bold mb-1">/ 5.0</span>}
+                  </div>
+                  <p className="text-xs text-stone-500 mb-6 font-medium">Based on {filteredResponses.length} filtered responses</p>
+                  
+                  <button 
+                    onClick={generateAIAssessment}
+                    disabled={isAnalyzing || responses.length === 0 || business?.plan === 'free'}
+                    className="w-full py-3 bg-amber-50 text-amber-600 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-amber-100 transition-colors disabled:opacity-50"
+                  >
+                    {isAnalyzing ? <div className="w-4 h-4 border-2 border-amber-600/20 border-t-amber-600 rounded-full animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                    Generate AI Summary
+                  </button>
+                  {business?.plan === 'free' && <p className="text-[10px] uppercase tracking-widest text-stone-400 mt-2">Requires Pro Plan</p>}
+                </div>
+              </div>
+            ) : null}
           </div>
-        ) : null}
+        )}
       </div>
     </div>
   );
