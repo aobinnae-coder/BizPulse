@@ -6,6 +6,7 @@ import { format } from 'date-fns';
 import { cn } from '../lib/utils';
 import { GoogleGenAI } from '@google/genai';
 import { motion } from 'framer-motion';
+import ReactMarkdown from 'react-markdown';
 
 function getGenAI() {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -156,6 +157,23 @@ export default function FeedbackInbox({ user, business, onViewOrder, initialSurv
     }
   };
 
+  const calculateOverallSentiment = () => {
+    if (filteredResponses.length === 0) return { label: 'No Data', value: 0 };
+    const score = filteredResponses.reduce((acc, r) => {
+      if (r.sentiment === 'positive') return acc + 1;
+      if (r.sentiment === 'negative') return acc - 1;
+      return acc;
+    }, 0) / filteredResponses.length;
+    
+    if (score > 0.5) return { label: 'Overwhelmingly Positive', value: score };
+    if (score > 0.2) return { label: 'Mostly Positive', value: score };
+    if (score > -0.2) return { label: 'Mixed / Neutral', value: score };
+    if (score > -0.5) return { label: 'Mostly Negative', value: score };
+    return { label: 'Overwhelmingly Negative', value: score };
+  };
+
+  const overallSentiment = calculateOverallSentiment();
+
   return (
     <div className="h-[calc(100vh-12rem)] flex gap-6">
       {/* List */}
@@ -163,15 +181,24 @@ export default function FeedbackInbox({ user, business, onViewOrder, initialSurv
         <div className="p-4 border-b border-stone-100 space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="font-bold text-stone-900">Inbox</h2>
-            <button 
-              onClick={generateAIAssessment}
-              disabled={isAnalyzing || responses.length === 0 || business?.plan === 'free'}
-              className="px-3 py-1.5 bg-amber-50 text-amber-600 rounded-lg text-xs font-bold hover:bg-amber-100 transition-colors flex items-center gap-1.5 disabled:opacity-50"
-              title={business?.plan === 'free' ? "Upgrade to Pro for AI Analysis" : "Analyze Responses"}
-            >
-              {isAnalyzing ? <div className="w-3 h-3 border-2 border-amber-600/20 border-t-amber-600 rounded-full animate-spin" /> : <Sparkles className="w-3 h-3" />}
-              AI Summary
-            </button>
+            <div className="flex items-center gap-2">
+              <div className={cn(
+                "px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-widest",
+                overallSentiment.value > 0.2 ? "bg-emerald-50 text-emerald-700" : 
+                overallSentiment.value < -0.2 ? "bg-red-50 text-red-700" : "bg-stone-100 text-stone-700"
+              )}>
+                {overallSentiment.label}
+              </div>
+              <button 
+                onClick={generateAIAssessment}
+                disabled={isAnalyzing || responses.length === 0 || business?.plan === 'free'}
+                className="px-3 py-1.5 bg-amber-50 text-amber-600 rounded-lg text-xs font-bold hover:bg-amber-100 transition-colors flex items-center gap-1.5 disabled:opacity-50"
+                title={business?.plan === 'free' ? "Upgrade to Pro for AI Analysis" : "Analyze Responses"}
+              >
+                {isAnalyzing ? <div className="w-3 h-3 border-2 border-amber-600/20 border-t-amber-600 rounded-full animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                AI Summary
+              </button>
+            </div>
           </div>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
@@ -339,10 +366,8 @@ export default function FeedbackInbox({ user, business, onViewOrder, initialSurv
                   <p className="text-sm text-amber-700">Analysis of {responses.length} responses</p>
                 </div>
               </div>
-              <div className="prose prose-amber prose-sm max-w-none">
-                {aiSummary.split('\n').map((line, i) => (
-                  <p key={i} className="text-amber-900 mb-2">{line}</p>
-                ))}
+              <div className="markdown-body prose prose-amber prose-sm max-w-none">
+                <ReactMarkdown>{aiSummary}</ReactMarkdown>
               </div>
               <button 
                 onClick={() => setAiSummary(null)}

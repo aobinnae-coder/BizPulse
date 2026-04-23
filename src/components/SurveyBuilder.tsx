@@ -14,6 +14,7 @@ import {
   List, 
   ToggleLeft,
   ArrowUpCircle,
+  ArrowUpRight,
   QrCode,
   Copy,
   ExternalLink,
@@ -130,36 +131,46 @@ export default function SurveyBuilder({ user, business, onViewResponses }: { use
       const batch = selectedCustomers.map(async (customer) => {
         let status = 'failed';
         if (type === 'email' && customer.email) {
-          const body = distributionMessages.email + `\n\nLink: https://bizcompana.com?survey=${currentSurvey.id}`;
-          
-          try {
-            const result = await fetch('/api/send-email', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                to: customer.email,
-                subject: `Feedback Request from ${business.name}`,
-                text: body
-              })
-            });
-            if (result.ok) status = 'delivered';
-          } catch (e) {
-            console.error('Failed to send email:', e);
+          const isValidEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customer.email);
+          if (!isValidEmail) {
+            status = 'invalid_email';
+          } else {
+            const body = distributionMessages.email + `\n\nLink: https://bizcompana.com?survey=${currentSurvey.id}`;
+            
+            try {
+              const result = await fetch('/api/send-email', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  to: customer.email,
+                  subject: `Feedback Request from ${business.name}`,
+                  text: body
+                })
+              });
+              if (result.ok) status = 'delivered';
+            } catch (e) {
+              console.error('Failed to send email:', e);
+            }
           }
         } else if (type === 'sms' && customer.phone) {
-          const body = distributionMessages.sms + ` https://bizcompana.com?survey=${currentSurvey.id}`;
-          try {
-            const result = await fetch('/api/send-sms', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                to: customer.phone,
-                body: body
-              })
-            });
-            if (result.ok) status = 'delivered';
-          } catch (e) {
-            console.error('Failed to send SMS:', e);
+          const isValidPhone = /^\+?[\d\s-]{10,}$/.test(customer.phone);
+          if (!isValidPhone) {
+            status = 'invalid_phone';
+          } else {
+            const body = distributionMessages.sms + ` https://bizcompana.com?survey=${currentSurvey.id}`;
+            try {
+              const result = await fetch('/api/send-sms', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  to: customer.phone,
+                  body: body
+                })
+              });
+              if (result.ok) status = 'delivered';
+            } catch (e) {
+              console.error('Failed to send SMS:', e);
+            }
           }
         }
 
@@ -412,8 +423,23 @@ export default function SurveyBuilder({ user, business, onViewResponses }: { use
     const dependentAnswer = answers[q.logic.dependsOnId];
     if (dependentAnswer === undefined) return false;
     
-    // Simple equality check for now
-    return String(dependentAnswer).toLowerCase() === String(q.logic.value).toLowerCase();
+    const condition = q.logic.condition || 'equals';
+    const targetValue = String(q.logic.value).toLowerCase();
+    const actualValue = String(dependentAnswer).toLowerCase();
+
+    switch (condition) {
+      case 'not_equals':
+        return actualValue !== targetValue;
+      case 'greater_than':
+        return Number(actualValue) > Number(targetValue);
+      case 'less_than':
+        return Number(actualValue) < Number(targetValue);
+      case 'contains':
+        return actualValue.includes(targetValue);
+      case 'equals':
+      default:
+        return actualValue === targetValue;
+    }
   };
 
   if (isCreating) {
@@ -424,7 +450,17 @@ export default function SurveyBuilder({ user, business, onViewResponses }: { use
             <button onClick={() => setIsCreating(false)} className="text-stone-500 hover:text-stone-900">
               <ChevronRight className="w-6 h-6 rotate-180" />
             </button>
-            <h1 className="text-2xl font-bold text-stone-900">{currentSurvey.id ? 'Edit Survey' : 'Create Survey'}</h1>
+            <div className="flex items-center gap-4">
+              <h1 className="text-2xl font-bold text-stone-900">{currentSurvey.title || (currentSurvey.id ? 'Edit Survey' : 'Create Survey')}</h1>
+              {currentSurvey.id && onViewResponses && (
+                <button 
+                  onClick={() => onViewResponses(currentSurvey.id)}
+                  className="px-3 py-1.5 bg-stone-100 text-stone-700 hover:bg-stone-200 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors"
+                >
+                  View Responses <ArrowUpRight className="w-3 h-3" />
+                </button>
+              )}
+            </div>
           </div>
           <div className="flex gap-3">
             <button 
@@ -825,7 +861,7 @@ export default function SurveyBuilder({ user, business, onViewResponses }: { use
                                 className="bg-white border border-stone-200 rounded-lg py-1.5 px-3 text-xs font-bold text-stone-700 outline-none focus:ring-2 focus:ring-stone-900 flex-1 min-w-[200px]"
                               >
                                 <option value="">Always show (No conditions)</option>
-                                {currentSurvey.questions.filter((prevQ: any) => prevQ.id !== q.id).map((prevQ: any) => (
+                                {currentSurvey.questions.slice(0, currentSurvey.questions.findIndex((tq: any) => tq.id === q.id)).map((prevQ: any) => (
                                   <option key={prevQ.id} value={prevQ.id}>Q: {prevQ.label || 'Untitled Question'}</option>
                                 ))}
                               </select>
@@ -1102,8 +1138,14 @@ export default function SurveyBuilder({ user, business, onViewResponses }: { use
                                 <p className="text-[10px] text-stone-500 truncate">{c.email || 'No email'}</p>
                               </div>
                               {dl && (
-                                <div className={cn("px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider", dl.status === 'delivered' ? "bg-emerald-50 text-emerald-600" : "bg-red-50 text-red-600")}>
-                                  {dl.status}
+                                <div className={cn(
+                                  "px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider",
+                                  dl.status === 'delivered' ? "bg-emerald-50 text-emerald-600" :
+                                  dl.status === 'sent' ? "bg-blue-50 text-blue-600" :
+                                  dl.status?.startsWith('invalid') ? "bg-amber-50 text-amber-600" :
+                                  "bg-red-50 text-red-600"
+                                )}>
+                                  {dl.status?.replace('_', ' ')}
                                 </div>
                               )}
                             </label>
@@ -1192,8 +1234,14 @@ export default function SurveyBuilder({ user, business, onViewResponses }: { use
                                 <p className="text-[10px] text-stone-500 truncate">{c.phone || 'No phone'}</p>
                               </div>
                               {dl && (
-                                <div className={cn("px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider", dl.status === 'delivered' ? "bg-emerald-50 text-emerald-600" : "bg-red-50 text-red-600")}>
-                                  {dl.status}
+                                <div className={cn(
+                                  "px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider",
+                                  dl.status === 'delivered' ? "bg-emerald-50 text-emerald-600" :
+                                  dl.status === 'sent' ? "bg-blue-50 text-blue-600" :
+                                  dl.status?.startsWith('invalid') ? "bg-amber-50 text-amber-600" :
+                                  "bg-red-50 text-red-600"
+                                )}>
+                                  {dl.status?.replace('_', ' ')}
                                 </div>
                               )}
                             </label>

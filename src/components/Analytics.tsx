@@ -150,6 +150,41 @@ export default function Analytics({ user, business, initialSurveyId }: { user: a
 
   const COLORS = ['#10b981', '#f59e0b', '#ef4444', '#3b82f6', '#8b5cf6', '#ec4899', '#6366f1'];
 
+  // Complex question stats
+  const questionDetailedStats = React.useMemo(() => {
+    const qMap: Record<string, any> = {};
+    surveys.forEach(s => {
+      s.questions?.forEach((q: any) => {
+        if (!qMap[q.id]) {
+          qMap[q.id] = { ...q, surveyTitle: s.title, answerCounts: {} };
+        }
+      });
+    });
+
+    filteredResponses.forEach(r => {
+      if (r.answers) {
+        Object.keys(r.answers).forEach(qId => {
+          if (qMap[qId]) {
+            let val = r.answers[qId];
+            if (val !== undefined && val !== '') {
+              if (Array.isArray(val)) {
+                val.forEach(v => {
+                  const key = String(v);
+                  qMap[qId].answerCounts[key] = (qMap[qId].answerCounts[key] || 0) + 1;
+                });
+              } else {
+                const key = String(val);
+                qMap[qId].answerCounts[key] = (qMap[qId].answerCounts[key] || 0) + 1;
+              }
+            }
+          }
+        });
+      }
+    });
+
+    return Object.values(qMap).filter(q => Object.keys(q.answerCounts).length > 0);
+  }, [surveys, filteredResponses]);
+
   return (
     <div className="space-y-8">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -399,6 +434,32 @@ export default function Analytics({ user, business, initialSurveyId }: { user: a
           </div>
         </div>
       </div>
+
+      {questionDetailedStats.length > 0 && (
+        <div className="bg-white p-8 rounded-3xl border border-stone-200 shadow-sm mt-8">
+          <h3 className="text-lg font-bold text-stone-900 mb-8">Detailed Answers Breakdown</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {questionDetailedStats.map(q => (
+              <div key={q.id} className="p-6 bg-stone-50 rounded-2xl border border-stone-100 flex flex-col gap-4">
+                <div>
+                  <p className="text-[10px] font-bold text-stone-400 uppercase tracking-widest bg-stone-200 inline-block px-2 py-1 rounded-md mb-2">{q.type} - {q.surveyTitle}</p>
+                  <h4 className="font-bold text-stone-900 text-sm leading-relaxed">{q.label}</h4>
+                </div>
+                <div className="space-y-2 mt-auto">
+                  {Object.entries(q.answerCounts).sort((a: any, b: any) => b[1] - a[1]).map(([answer, count]: any) => (
+                    <div key={answer} className="flex items-center justify-between text-xs">
+                      <span className="text-stone-600 truncate mr-2" title={answer}>
+                         {q.type === 'star' ? `${answer} Star${answer !== '1' ? 's' : ''}` : answer}
+                      </span>
+                      <span className="font-bold text-stone-900 bg-white px-2 py-1 rounded-lg shadow-sm border border-stone-100">{count}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
