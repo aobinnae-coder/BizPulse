@@ -19,7 +19,9 @@ export default function Analytics({ user, business, initialSurveyId }: { user: a
   // New Filter States
   const [filterSurveyId, setFilterSurveyId] = useState<string>(initialSurveyId || 'all');
   const [filterSentiment, setFilterSentiment] = useState<string>('all');
-  const [filterScore, setFilterScore] = useState<string>('all');
+  const [filterScoreMin, setFilterScoreMin] = useState<number>(1);
+  const [filterScoreMax, setFilterScoreMax] = useState<number>(10);
+  const [filterStatus, setFilterStatus] = useState<string>('all');
 
   useEffect(() => {
     if (!business) return;
@@ -63,10 +65,14 @@ export default function Analytics({ user, business, initialSurveyId }: { user: a
       filtered = filtered.filter(r => r.sentiment === filterSentiment);
     }
 
-    if (filterScore !== 'all') {
-      const targetScore = parseInt(filterScore, 10);
-      filtered = filtered.filter(r => r.score === targetScore);
+    if (filterStatus !== 'all') {
+      filtered = filtered.filter(r => (r.status || 'new') === filterStatus);
     }
+
+    filtered = filtered.filter(r => {
+      const score = r.score || 0;
+      return score >= filterScoreMin && score <= filterScoreMax;
+    });
 
     return filtered;
   }
@@ -80,7 +86,21 @@ export default function Analytics({ user, business, initialSurveyId }: { user: a
     { name: 'Negative', value: filteredResponses.filter(r => r.sentiment === 'negative').length, color: '#ef4444' },
   ];
 
+  const scoreBreakdownData = [
+    { name: '10 Stars', value: filteredResponses.filter(r => r.score === 10).length, color: '#10b981' },
+    { name: '9 Stars', value: filteredResponses.filter(r => r.score === 9).length, color: '#34d399' },
+    { name: '8 Stars', value: filteredResponses.filter(r => r.score === 8).length, color: '#6ee7b7' },
+    { name: '7 Stars', value: filteredResponses.filter(r => r.score === 7).length, color: '#a7f3d0' },
+    { name: '6 Stars', value: filteredResponses.filter(r => r.score === 6).length, color: '#fcd34d' },
+    { name: '5 Stars', value: filteredResponses.filter(r => r.score === 5).length, color: '#fbbf24' },
+    { name: '4 Stars', value: filteredResponses.filter(r => r.score === 4).length, color: '#f59e0b' },
+    { name: '3 Stars', value: filteredResponses.filter(r => r.score === 3).length, color: '#f87171' },
+    { name: '2 Stars', value: filteredResponses.filter(r => r.score === 2).length, color: '#ef4444' },
+    { name: '1 Star', value: filteredResponses.filter(r => r.score === 1).length, color: '#dc2626' },
+  ].filter(s => s.value > 0);
+
   const avgScore = filteredResponses.length ? filteredResponses.reduce((acc, r) => acc + (r.score || 0), 0) / filteredResponses.length : 0;
+  const overallAvgScore = responses.length ? responses.reduce((acc, r) => acc + (r.score || 0), 0) / responses.length : 0;
   const totalRevenue = filteredOrders.reduce((acc, o) => acc + (o.total || 0), 0);
   
   const totalViews = surveys.reduce((acc, s) => acc + (s.views || 0), 0);
@@ -187,82 +207,131 @@ export default function Analytics({ user, business, initialSurveyId }: { user: a
 
   return (
     <div className="space-y-8">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col md:flex-row md:items-start justify-between gap-6">
         <div>
           <h1 className="text-2xl font-bold text-stone-900">Analytics</h1>
           <p className="text-stone-500">Deep dive into your customer satisfaction metrics.</p>
         </div>
-        <div className="flex bg-white border border-stone-200 rounded-xl p-1">
-          <select
-            value={filterSurveyId}
-            onChange={(e) => setFilterSurveyId(e.target.value)}
-            className="bg-transparent border-none text-sm font-bold text-stone-600 outline-none pr-6 cursor-pointer"
-          >
-            <option value="all">All Surveys</option>
-            {surveys.map(s => <option key={s.id} value={s.id}>{s.title || 'Untitled Survey'}</option>)}
-          </select>
-          <div className="w-px bg-stone-200 mx-2" />
-          <select
-            value={filterSentiment}
-            onChange={(e) => setFilterSentiment(e.target.value)}
-            className="bg-transparent border-none text-sm font-bold text-stone-600 outline-none pr-6 cursor-pointer"
-          >
-            <option value="all">All Sentiments</option>
-            <option value="positive">Positive</option>
-            <option value="neutral">Neutral</option>
-            <option value="negative">Negative</option>
-          </select>
-          <div className="w-px bg-stone-200 mx-2" />
-          <select
-            value={filterScore}
-            onChange={(e) => setFilterScore(e.target.value)}
-            className="bg-transparent border-none text-sm font-bold text-stone-600 outline-none pr-6 cursor-pointer"
-          >
-            <option value="all">All Scores</option>
-            {[1,2,3,4,5,6,7,8,9,10].map(s => <option key={s} value={s}>{s} Stars</option>)}
-          </select>
-          <div className="w-px bg-stone-200 mx-2" />
+        <div className="flex flex-wrap gap-3">
           <button 
             onClick={() => setDateRange('7d')}
-            className={cn("px-4 py-1.5 rounded-lg text-sm font-bold transition-all", dateRange === '7d' ? "bg-stone-900 text-white" : "text-stone-500 hover:text-stone-900")}
+            className={cn("px-4 py-2 rounded-xl text-sm font-bold transition-all border", dateRange === '7d' ? "bg-stone-900 border-stone-900 text-white shadow-md shadow-stone-900/10" : "bg-white border-stone-200 text-stone-500 hover:text-stone-900 hover:border-stone-300")}
           >
-            7D
+            7 Days
           </button>
           <button 
             onClick={() => setDateRange('30d')}
-            className={cn("px-4 py-1.5 rounded-lg text-sm font-bold transition-all", dateRange === '30d' ? "bg-stone-900 text-white" : "text-stone-500 hover:text-stone-900")}
+            className={cn("px-4 py-2 rounded-xl text-sm font-bold transition-all border", dateRange === '30d' ? "bg-stone-900 border-stone-900 text-white shadow-md shadow-stone-900/10" : "bg-white border-stone-200 text-stone-500 hover:text-stone-900 hover:border-stone-300")}
           >
-            30D
+            30 Days
           </button>
           <button 
             onClick={() => setDateRange('all')}
-            className={cn("px-4 py-1.5 rounded-lg text-sm font-bold transition-all", dateRange === 'all' ? "bg-stone-900 text-white" : "text-stone-500 hover:text-stone-900")}
+            className={cn("px-4 py-2 rounded-xl text-sm font-bold transition-all border", dateRange === 'all' ? "bg-stone-900 border-stone-900 text-white shadow-md shadow-stone-900/10" : "bg-white border-stone-200 text-stone-500 hover:text-stone-900 hover:border-stone-300")}
           >
             All Time
           </button>
         </div>
       </div>
 
+      {/* Advanced Filters */}
+      <div className="bg-white p-6 rounded-3xl border border-stone-200 shadow-sm grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div>
+          <label className="block text-xs font-bold text-stone-500 uppercase tracking-wider mb-2">Survey</label>
+          <select
+            value={filterSurveyId}
+            onChange={(e) => setFilterSurveyId(e.target.value)}
+            className="w-full bg-stone-50 border border-stone-200 rounded-xl px-4 py-2.5 text-sm font-medium text-stone-900 outline-none focus:border-stone-400 focus:bg-white transition-all"
+          >
+            <option value="all">All Surveys</option>
+            {surveys.map(s => <option key={s.id} value={s.id}>{s.title || 'Untitled Survey'}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs font-bold text-stone-500 uppercase tracking-wider mb-2">Status</label>
+          <select
+            value={filterStatus}
+            onChange={(e) => setFilterStatus(e.target.value)}
+            className="w-full bg-stone-50 border border-stone-200 rounded-xl px-4 py-2.5 text-sm font-medium text-stone-900 outline-none focus:border-stone-400 focus:bg-white transition-all"
+          >
+            <option value="all">All Statuses</option>
+            <option value="new">New</option>
+            <option value="reviewed">Reviewed</option>
+            <option value="flagged">Flagged</option>
+            <option value="archived">Archived</option>
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs font-bold text-stone-500 uppercase tracking-wider mb-2">Sentiment</label>
+          <select
+            value={filterSentiment}
+            onChange={(e) => setFilterSentiment(e.target.value)}
+            className="w-full bg-stone-50 border border-stone-200 rounded-xl px-4 py-2.5 text-sm font-medium text-stone-900 outline-none focus:border-stone-400 focus:bg-white transition-all"
+          >
+            <option value="all">All Sentiments</option>
+            <option value="positive">Positive</option>
+            <option value="neutral">Neutral</option>
+            <option value="negative">Negative</option>
+          </select>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="block text-xs font-bold text-stone-500 uppercase tracking-wider mb-2">Min Score</label>
+            <input
+              type="number"
+              min="1"
+              max="10"
+              value={filterScoreMin}
+              onChange={(e) => setFilterScoreMin(Number(e.target.value))}
+              className="w-full bg-stone-50 border border-stone-200 rounded-xl px-3 py-2.5 text-sm font-medium text-stone-900 outline-none focus:border-stone-400 focus:bg-white transition-all"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-stone-500 uppercase tracking-wider mb-2">Max Score</label>
+            <input
+              type="number"
+              min="1"
+              max="10"
+              value={filterScoreMax}
+              onChange={(e) => setFilterScoreMax(Number(e.target.value))}
+              className="w-full bg-stone-50 border border-stone-200 rounded-xl px-3 py-2.5 text-sm font-medium text-stone-900 outline-none focus:border-stone-400 focus:bg-white transition-all"
+            />
+          </div>
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         <div className="bg-stone-900 p-8 rounded-3xl text-white relative overflow-hidden">
           <div className="relative z-10">
-            <TrendingUp className="w-8 h-8 text-emerald-400 mb-4" />
-            <p className="text-stone-400 text-sm font-medium uppercase tracking-widest mb-1">Total Revenue</p>
+            <Star className="w-8 h-8 text-amber-400 mb-4" />
+            <p className="text-stone-400 text-sm font-medium uppercase tracking-widest mb-1">Global Average Score</p>
+            <h4 className="text-4xl font-bold text-white">{overallAvgScore.toFixed(1)} / 10</h4>
+            <div className="flex items-center gap-1 mt-2">
+              <span className="text-xs font-medium text-stone-400">
+                All-time average from {responses.length} responses
+              </span>
+            </div>
+          </div>
+          <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/10 blur-3xl rounded-full -mr-16 -mt-16" />
+        </div>
+        <div className="bg-white p-8 rounded-3xl border border-stone-200 shadow-sm relative overflow-hidden">
+          <div className="relative z-10">
+            <TrendingUp className="w-8 h-8 text-emerald-500 mb-4" />
+            <p className="text-stone-500 text-sm font-medium uppercase tracking-widest mb-1">Total Revenue</p>
             <h4 className="text-4xl font-bold">${totalRevenue.toLocaleString()}</h4>
             <div className="flex items-center gap-1 mt-2">
-              {revenueTrend >= 0 ? <ArrowUpRight className="w-4 h-4 text-emerald-400" /> : <ArrowDownRight className="w-4 h-4 text-red-400" />}
-              <span className={cn("text-xs font-bold", revenueTrend >= 0 ? "text-emerald-400" : "text-red-400")}>
+              {revenueTrend >= 0 ? <ArrowUpRight className="w-4 h-4 text-emerald-500" /> : <ArrowDownRight className="w-4 h-4 text-red-500" />}
+              <span className={cn("text-xs font-bold", revenueTrend >= 0 ? "text-emerald-500" : "text-red-500")}>
                 {Math.abs(revenueTrend).toFixed(1)}% vs prev period
               </span>
             </div>
           </div>
-          <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 blur-3xl rounded-full -mr-16 -mt-16" />
         </div>
         <div className="bg-white p-8 rounded-3xl border border-stone-200 shadow-sm">
           <Star className="w-8 h-8 text-amber-400 mb-4" />
-          <p className="text-stone-500 text-sm font-medium uppercase tracking-widest mb-1">Overall NPS</p>
-          <h4 className="text-4xl font-bold text-stone-900">{avgScore.toFixed(1)}</h4>
-          <p className="text-xs text-stone-400 mt-2">Based on {filteredResponses.length} reviews</p>
+          <p className="text-stone-500 text-sm font-medium uppercase tracking-widest mb-1">Filtered NPS</p>
+          <h4 className="text-4xl font-bold text-stone-900">{avgScore.toFixed(1)} / 10</h4>
+          <p className="text-xs text-stone-400 mt-2">Based on {filteredResponses.length} filtered reviews</p>
         </div>
         <div className="bg-white p-8 rounded-3xl border border-stone-200 shadow-sm">
           <Users className="w-8 h-8 text-stone-400 mb-4" />
@@ -367,6 +436,45 @@ export default function Analytics({ user, business, initialSurveyId }: { user: a
               ))}
             </div>
           </div>
+        </div>
+
+        <div className="bg-white p-8 rounded-3xl border border-stone-200 shadow-sm">
+          <h3 className="text-lg font-bold text-stone-900 mb-8">Score Breakdown</h3>
+          {scoreBreakdownData.length > 0 ? (
+            <div className="h-[300px] flex items-center">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={scoreBreakdownData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={60}
+                    outerRadius={100}
+                    paddingAngle={2}
+                    dataKey="value"
+                  >
+                    {scoreBreakdownData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="space-y-3 pr-8 max-h-full overflow-y-auto w-1/2">
+                {scoreBreakdownData.map(s => (
+                  <div key={s.name} className="flex items-center gap-3">
+                    <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: s.color }} />
+                    <span className="text-sm font-medium text-stone-600 truncate flex-1">{s.name}</span>
+                    <span className="text-sm font-bold text-stone-900">{s.value}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="h-[300px] flex items-center justify-center text-stone-400">
+              No score data available for selected filters.
+            </div>
+          )}
         </div>
 
         <div className="bg-white p-8 rounded-3xl border border-stone-200 shadow-sm">

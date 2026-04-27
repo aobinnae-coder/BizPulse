@@ -58,8 +58,21 @@ export default function PublicSurvey({ surveyId }: { surveyId: string }) {
 
     // Determine what to verify
     let typeToVerify: 'email' | 'phone' | null = null;
-    if (contact.email) typeToVerify = 'email';
-    else if (contact.phone) typeToVerify = 'phone';
+    if (contact.email) {
+      const isValidEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact.email);
+      if (!isValidEmail) {
+        alert('Please enter a valid email address.');
+        return;
+      }
+      typeToVerify = 'email';
+    } else if (contact.phone) {
+      const isValidPhone = /^\+?[\d\s-]{10,}$/.test(contact.phone);
+      if (!isValidPhone) {
+        alert('Please enter a valid phone number (at least 10 digits).');
+        return;
+      }
+      typeToVerify = 'phone';
+    }
     
     if (!typeToVerify) {
       alert('Please enter an email or phone number to verify.');
@@ -170,8 +183,6 @@ export default function PublicSurvey({ surveyId }: { surveyId: string }) {
     const stringValue = String(q.logic.value).toLowerCase();
 
     switch (q.logic.condition) {
-      case 'equals':
-        return stringDependent === stringValue;
       case 'not_equals':
         return stringDependent !== stringValue;
       case 'contains':
@@ -180,8 +191,9 @@ export default function PublicSurvey({ surveyId }: { surveyId: string }) {
         return Number(dependentAnswer) > Number(q.logic.value);
       case 'less_than':
         return Number(dependentAnswer) < Number(q.logic.value);
+      case 'equals':
       default:
-        return true;
+        return stringDependent === stringValue;
     }
   });
 

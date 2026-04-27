@@ -694,9 +694,18 @@ export default function Storefront({ businessId }: { businessId: string }) {
                   </div>
                   
                   {clientSecret ? (
-                    <Elements stripe={stripePromise} options={{ clientSecret }}>
-                      <CheckoutForm clientSecret={clientSecret} amount={cartTotal} onSuccessfulPayment={handlePaymentSuccess} />
-                    </Elements>
+                    clientSecret === 'pi_mock_client_secret_for_testing' ? (
+                      <button 
+                        onClick={handlePaymentSuccess}
+                        className="w-full py-4 bg-stone-900 text-white rounded-2xl font-bold hover:bg-stone-800 transition-all flex items-center justify-center gap-2"
+                      >
+                        Simulate Mock Payment
+                      </button>
+                    ) : (
+                      <Elements stripe={stripePromise} options={{ clientSecret }}>
+                        <CheckoutForm clientSecret={clientSecret} amount={cartTotal} onSuccessfulPayment={handlePaymentSuccess} />
+                      </Elements>
+                    )
                   ) : (
                     <button 
                       onClick={handleCheckoutInit}

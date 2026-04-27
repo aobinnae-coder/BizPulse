@@ -77,6 +77,7 @@ export default function SurveyBuilder({ user, business, onViewResponses }: { use
   const [iframeHeight, setIframeHeight] = useState('600px');
   const [showPreview, setShowPreview] = useState(false);
   const [showTemplates, setShowTemplates] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const [previewAnswers, setPreviewAnswers] = useState<Record<string, any>>({});
   const [previewErrors, setPreviewErrors] = useState<Record<string, string>>({});
 
@@ -1594,22 +1595,31 @@ export default function SurveyBuilder({ user, business, onViewResponses }: { use
         </div>
       )}
 
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-stone-900">Surveys</h1>
           <p className="text-stone-500">Manage and create your customer feedback forms.</p>
         </div>
-        <button 
-          onClick={handleCreateNew}
-          className="px-4 py-2 bg-stone-900 text-white rounded-xl text-sm font-medium hover:bg-stone-800 transition-colors flex items-center gap-2"
-        >
-          <Plus className="w-4 h-4" />
-          Create New Survey
-        </button>
+        <div className="flex items-center gap-4">
+          <input 
+            type="text" 
+            placeholder="Search surveys..." 
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full sm:w-64 p-2 bg-stone-50 border border-stone-200 rounded-xl outline-none"
+          />
+          <button 
+            onClick={handleCreateNew}
+            className="whitespace-nowrap px-4 py-2 bg-stone-900 text-white rounded-xl text-sm font-medium hover:bg-stone-800 transition-colors flex items-center gap-2"
+          >
+            <Plus className="w-4 h-4" />
+            Create New Survey
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {surveys.map((survey) => (
+        {surveys.filter(s => (s.title || '').toLowerCase().includes(searchQuery.toLowerCase()) || (s.description || '').toLowerCase().includes(searchQuery.toLowerCase())).map((survey) => (
           <div key={survey.id} className="bg-white p-6 rounded-3xl border border-stone-200 shadow-sm hover:border-stone-400 transition-all group">
             <div className="flex items-center justify-between mb-4">
               <div className={cn(
