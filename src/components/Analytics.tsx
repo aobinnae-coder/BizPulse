@@ -368,7 +368,7 @@ export default function Analytics({ user, business, initialSurveyId }: { user: a
             </div>
           </div>
           <div className="h-[300px]">
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
               <AreaChart data={sentimentTrendData}>
                 <defs>
                   <linearGradient id="colorPos" x1="0" y1="0" x2="0" y2="1">
@@ -383,55 +383,77 @@ export default function Analytics({ user, business, initialSurveyId }: { user: a
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f1f1" />
                 <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10 }} />
                 <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10 }} />
-                <Tooltip />
-                <Area type="monotone" dataKey="positive" stroke="#10b981" fillOpacity={1} fill="url(#colorPos)" strokeWidth={2} />
-                <Area type="monotone" dataKey="negative" stroke="#ef4444" fillOpacity={1} fill="url(#colorNeg)" strokeWidth={2} />
+                <Tooltip 
+                  contentStyle={{ backgroundColor: '#fff', borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                  itemStyle={{ fontWeight: 'bold' }}
+                />
+                <Area type="monotone" dataKey="positive" stroke="#10b981" fillOpacity={1} fill="url(#colorPos)" strokeWidth={3} />
+                <Area type="monotone" dataKey="negative" stroke="#ef4444" fillOpacity={1} fill="url(#colorNeg)" strokeWidth={3} />
               </AreaChart>
             </ResponsiveContainer>
           </div>
         </div>
 
         <div className="bg-white p-8 rounded-3xl border border-stone-200 shadow-sm">
-          <h3 className="text-lg font-bold text-stone-900 mb-8">Revenue Trend</h3>
+          <h3 className="text-lg font-bold text-stone-900 mb-8 flex items-center gap-2">
+            <TrendingUp className="w-5 h-5 text-emerald-500" />
+            Revenue Growth
+          </h3>
           <div className="h-[300px]">
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
               <BarChart data={revenueData}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f1f1" />
                 <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10 }} />
                 <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10 }} />
-                <Tooltip />
-                <Bar dataKey="revenue" fill="#1c1917" radius={[4, 4, 0, 0]} />
+                <Tooltip 
+                  contentStyle={{ backgroundColor: '#fff', borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                  itemStyle={{ fontWeight: 'bold' }}
+                  formatter={(value: any) => [`$${value.toLocaleString()}`, 'Revenue']}
+                />
+                <Bar dataKey="revenue" fill="#1c1917" radius={[6, 6, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
         </div>
 
-        <div className="bg-white p-8 rounded-3xl border border-stone-200 shadow-sm">
-          <h3 className="text-lg font-bold text-stone-900 mb-8">Sentiment Breakdown</h3>
-          <div className="h-[300px] flex items-center">
-            <ResponsiveContainer width="100%" height="100%">
+        <div className="bg-white p-8 rounded-3xl border border-stone-200 shadow-sm col-span-1 lg:col-span-1">
+          <h3 className="text-lg font-bold text-stone-900 mb-8 flex items-center gap-2">
+            <TrendingUp className="w-5 h-5 text-emerald-500" />
+            Sentiment Distribution
+          </h3>
+          <div className="h-[300px] flex flex-col items-center">
+            <ResponsiveContainer width="100%" height={220} minWidth={0}>
               <PieChart>
                 <Pie
                   data={sentimentData}
                   cx="50%"
                   cy="50%"
                   innerRadius={60}
-                  outerRadius={100}
-                  paddingAngle={5}
+                  outerRadius={80}
+                  paddingAngle={8}
                   dataKey="value"
+                  stroke="none"
                 >
                   {sentimentData.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={entry.color} />
                   ))}
                 </Pie>
-                <Tooltip />
+                <Tooltip 
+                  contentStyle={{ backgroundColor: '#fff', borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                  itemStyle={{ fontWeight: 'bold' }}
+                />
               </PieChart>
             </ResponsiveContainer>
-            <div className="space-y-4 pr-8">
+            <div className="w-full mt-6 grid grid-cols-1 gap-2">
               {sentimentData.map(s => (
-                <div key={s.name} className="flex items-center gap-3">
-                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: s.color }} />
-                  <span className="text-sm font-medium text-stone-600">{s.name} ({s.value})</span>
+                <div key={s.name} className="flex items-center justify-between p-2 rounded-xl bg-stone-50 border border-stone-100">
+                  <div className="flex items-center gap-3">
+                    <div className="w-3 h-3 rounded-full" style={{ backgroundColor: s.color }} />
+                    <span className="text-sm font-semibold text-stone-700">{s.name}</span>
+                  </div>
+                  <span className="text-sm font-bold text-stone-900">
+                    {s.value} <span className="text-[10px] text-stone-400">({filteredResponses.length > 0 ? Math.round((s.value / filteredResponses.length) * 100) : 0}%)</span>
+                  </span>
                 </div>
               ))}
             </div>
@@ -439,70 +461,85 @@ export default function Analytics({ user, business, initialSurveyId }: { user: a
         </div>
 
         <div className="bg-white p-8 rounded-3xl border border-stone-200 shadow-sm">
-          <h3 className="text-lg font-bold text-stone-900 mb-8">Score Breakdown</h3>
+          <h3 className="text-lg font-bold text-stone-900 mb-8 flex items-center gap-2">
+            <Star className="w-5 h-5 text-amber-500" />
+            Score Breakdown
+          </h3>
           {scoreBreakdownData.length > 0 ? (
-            <div className="h-[300px] flex items-center">
-              <ResponsiveContainer width="100%" height="100%">
+            <div className="h-[300px] flex flex-col items-center">
+              <ResponsiveContainer width="100%" height={220} minWidth={0}>
                 <PieChart>
                   <Pie
                     data={scoreBreakdownData}
                     cx="50%"
                     cy="50%"
                     innerRadius={60}
-                    outerRadius={100}
-                    paddingAngle={2}
+                    outerRadius={80}
+                    paddingAngle={4}
                     dataKey="value"
+                    stroke="none"
                   >
                     {scoreBreakdownData.map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={entry.color} />
                     ))}
                   </Pie>
-                  <Tooltip />
+                  <Tooltip 
+                    contentStyle={{ backgroundColor: '#fff', borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                    itemStyle={{ fontWeight: 'bold' }}
+                  />
                 </PieChart>
               </ResponsiveContainer>
-              <div className="space-y-3 pr-8 max-h-full overflow-y-auto w-1/2">
+              <div className="w-full mt-6 flex flex-wrap gap-2 justify-center max-h-24 overflow-y-auto">
                 {scoreBreakdownData.map(s => (
-                  <div key={s.name} className="flex items-center gap-3">
-                    <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: s.color }} />
-                    <span className="text-sm font-medium text-stone-600 truncate flex-1">{s.name}</span>
-                    <span className="text-sm font-bold text-stone-900">{s.value}</span>
+                  <div key={s.name} className="flex items-center gap-2 px-2 py-1 rounded-lg bg-stone-50 border border-stone-100">
+                    <div className="w-2 h-2 rounded-full" style={{ backgroundColor: s.color }} />
+                    <span className="text-[10px] font-bold text-stone-600 truncate">{s.name}</span>
+                    <span className="text-[10px] font-black text-stone-900">{s.value}</span>
                   </div>
                 ))}
               </div>
             </div>
           ) : (
-            <div className="h-[300px] flex items-center justify-center text-stone-400">
+            <div className="h-[300px] flex items-center justify-center text-stone-400 text-sm font-medium">
               No score data available for selected filters.
             </div>
           )}
         </div>
 
         <div className="bg-white p-8 rounded-3xl border border-stone-200 shadow-sm">
-          <h3 className="text-lg font-bold text-stone-900 mb-8">Breakdown by Question Type</h3>
-          <div className="h-[300px] flex items-center">
-            <ResponsiveContainer width="100%" height="100%">
+          <h3 className="text-lg font-bold text-stone-900 mb-8 flex items-center gap-2">
+            <MessageSquare className="w-5 h-5 text-blue-500" />
+            Answered Questions by Type
+          </h3>
+          <div className="h-[300px] flex flex-col items-center">
+            <ResponsiveContainer width="100%" height={220} minWidth={0}>
               <PieChart>
                 <Pie
                   data={questionTypeStats}
                   cx="50%"
                   cy="50%"
                   innerRadius={60}
-                  outerRadius={100}
-                  paddingAngle={5}
+                  outerRadius={80}
+                  paddingAngle={6}
                   dataKey="value"
+                  stroke="none"
                 >
                   {questionTypeStats.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                   ))}
                 </Pie>
-                <Tooltip />
+                <Tooltip 
+                  contentStyle={{ backgroundColor: '#fff', borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                  itemStyle={{ fontWeight: 'bold' }}
+                />
               </PieChart>
             </ResponsiveContainer>
-            <div className="space-y-4 pr-8 max-h-full overflow-y-auto w-1/3">
+            <div className="w-full mt-6 flex flex-wrap gap-2 justify-center max-h-24 overflow-y-auto">
               {questionTypeStats.map((s, idx) => (
-                <div key={s.name} className="flex items-center gap-3">
-                  <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: COLORS[idx % COLORS.length] }} />
-                  <span className="text-sm font-medium text-stone-600 truncate capitalize">{s.name} ({s.value})</span>
+                <div key={s.name} className="flex items-center gap-2 px-2 py-1 rounded-lg bg-stone-50 border border-stone-100">
+                  <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: COLORS[idx % COLORS.length] }} />
+                  <span className="text-[10px] font-bold text-stone-600 truncate capitalize">{s.name}</span>
+                  <span className="text-[10px] font-black text-stone-900">{s.value}</span>
                 </div>
               ))}
             </div>

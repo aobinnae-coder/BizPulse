@@ -25,7 +25,8 @@ import {
   Phone,
   Code,
   Send,
-  X
+  X,
+  BarChart3
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '../lib/utils';
@@ -1673,7 +1674,18 @@ export default function SurveyBuilder({ user, business, onViewResponses }: { use
                 </button>
               </div>
             </div>
-            <h3 className="text-lg font-bold text-stone-900 mb-2">{survey.title}</h3>
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-lg font-bold text-stone-900">{survey.title}</h3>
+              {onViewResponses && (
+                <button 
+                  onClick={() => onViewResponses(survey.id)}
+                  className="text-[10px] font-bold text-stone-900 bg-stone-100 hover:bg-stone-200 px-2 py-1 rounded-lg transition-colors flex items-center gap-1 shrink-0"
+                >
+                  <BarChart3 className="w-3 h-3" />
+                  Responses
+                </button>
+              )}
+            </div>
             <p className="text-sm text-stone-500 line-clamp-2 mb-6">{survey.description}</p>
             <div className="flex flex-col gap-2 pt-6 border-t border-stone-100">
               <div className="flex items-center justify-between">
@@ -1681,14 +1693,6 @@ export default function SurveyBuilder({ user, business, onViewResponses }: { use
                   <Users className="w-4 h-4" />
                   <span className="text-xs font-medium">{survey.responseCount || 0} responses</span>
                 </div>
-                {onViewResponses && (
-                  <button 
-                    onClick={() => onViewResponses(survey.id)}
-                    className="text-[10px] font-bold text-stone-900 uppercase tracking-widest flex items-center gap-1 hover:bg-stone-100 px-3 py-1.5 rounded-lg transition-colors"
-                  >
-                    View Responses <ChevronRight className="w-3 h-3" />
-                  </button>
-                )}
               </div>
               {survey.lastDistributed && (
                 <div className="flex items-center gap-1.5 text-[10px] font-bold text-stone-400 uppercase tracking-widest">

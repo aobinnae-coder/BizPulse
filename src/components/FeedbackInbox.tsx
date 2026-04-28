@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { db } from '../lib/firebase';
 import { collection, query, where, onSnapshot, orderBy, doc, updateDoc, addDoc } from 'firebase/firestore';
 import { Search, Filter, MessageSquare, User, Clock, CheckCircle2, Flag, Archive, MoreVertical, Send, ShoppingBag, Sparkles, Wand2, Edit, Save, X, ArrowUpDown } from 'lucide-react';
-import { format } from 'date-fns';
+import { format, subDays, isAfter, startOfDay } from 'date-fns';
 import { cn } from '../lib/utils';
 import { GoogleGenAI } from '@google/genai';
 import { motion } from 'framer-motion';
@@ -32,6 +32,9 @@ export default function FeedbackInbox({ user, business, onViewOrder, initialSurv
   const [editData, setEditData] = useState<any>(null);
   const [dateRange, setDateRange] = useState({ start: '', end: '' });
   const [showFilters, setShowFilters] = useState(false);
+  const [datePreset, setDatePreset] = useState<'all' | '7d' | '30d' | 'custom'>('all');
+  const [actionItemFilter, setActionItemFilter] = useState<'all' | 'with-actions' | 'without-actions'>('all');
+  const [actionItems, setActionItems] = useState<any[]>([]);
 
   useEffect(() => {
     if (!business) return;
@@ -39,7 +42,16 @@ export default function FeedbackInbox({ user, business, onViewOrder, initialSurv
     const unsubscribe = onSnapshot(q, (s) => {
       setResponses(s.docs.map(d => ({ id: d.id, ...d.data() })));
     });
-    return () => unsubscribe();
+
+    const aiQuery = query(collection(db, 'actionItems'), where('businessId', '==', business.id));
+    const aiUnsubscribe = onSnapshot(aiQuery, (s) => {
+      setActionItems(s.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
+
+    return () => {
+      unsubscribe();
+      aiUnsubscribe();
+    };
   }, [business]);
 
   const updateStatus = async (id: string, status: string) => {
@@ -76,9 +88,24 @@ export default function FeedbackInbox({ user, business, onViewOrder, initialSurv
       if (!name.includes(searchLower) && !email.includes(searchLower) && !answers.includes(searchLower)) return false;
     }
 
+    // Action item filter
+    if (actionItemFilter !== 'all') {
+      const hasAction = actionItems.some(ai => ai.responseId === r.id);
+      if (actionItemFilter === 'with-actions' && !hasAction) return false;
+      if (actionItemFilter === 'without-actions' && hasAction) return false;
+    }
+
     // Date range filter
-    if (dateRange.start && new Date(r.createdAt) < new Date(dateRange.start)) return false;
-    if (dateRange.end && new Date(r.createdAt) > new Date(dateRange.end)) return false;
+    if (datePreset === '7d') {
+      const sevenDaysAgo = startOfDay(subDays(new Date(), 7));
+      if (!isAfter(new Date(r.createdAt), sevenDaysAgo)) return false;
+    } else if (datePreset === '30d') {
+      const thirtyDaysAgo = startOfDay(subDays(new Date(), 30));
+      if (!isAfter(new Date(r.createdAt), thirtyDaysAgo)) return false;
+    } else if (datePreset === 'custom') {
+      if (dateRange.start && new Date(r.createdAt) < new Date(dateRange.start)) return false;
+      if (dateRange.end && new Date(r.createdAt) > new Date(dateRange.end)) return false;
+    }
 
     return true;
   }).sort((a, b) => {
@@ -240,66 +267,109 @@ export default function FeedbackInbox({ user, business, onViewOrder, initialSurv
             <motion.div 
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: 'auto', opacity: 1 }}
-              className="space-y-3 pt-2 border-t border-stone-100"
+              className="space-y-4 pt-2 border-t border-stone-100 px-1"
             >
+              <div className="space-y-2">
+                <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Date Range</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {['all', '7d', '30d', 'custom'].map(p => (
+                    <button 
+                      key={p}
+                      onClick={() => setDatePreset(p as any)}
+                      className={cn(
+                        "px-2 py-1.5 rounded-lg text-xs font-bold transition-all border",
+                        datePreset === p ? "bg-stone-900 border-stone-900 text-white" : "bg-white border-stone-200 text-stone-500 hover:border-stone-400"
+                      )}
+                    >
+                      {p === 'all' ? 'All Time' : p === '7d' ? 'Last 7D' : p === '30d' ? 'Last 30D' : 'Custom'}
+                    </button>
+                  ))}
+                </div>
+                {datePreset === 'custom' && (
+                  <div className="grid grid-cols-2 gap-2 mt-2">
+                    <input 
+                      type="date" 
+                      value={dateRange.start}
+                      onChange={e => setDateRange({ ...dateRange, start: e.target.value })}
+                      className="w-full bg-stone-50 border border-stone-200 rounded-lg py-1.5 px-2 text-xs outline-none focus:border-stone-400"
+                    />
+                    <input 
+                      type="date" 
+                      value={dateRange.end}
+                      onChange={e => setDateRange({ ...dateRange, end: e.target.value })}
+                      className="w-full bg-stone-50 border border-stone-200 rounded-lg py-1.5 px-2 text-xs outline-none focus:border-stone-400"
+                    />
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Action Items</label>
+                <div className="flex gap-2">
+                  {['all', 'with-actions', 'without-actions'].map(f => (
+                    <button 
+                      key={f}
+                      onClick={() => setActionItemFilter(f as any)}
+                      className={cn(
+                        "flex-1 px-2 py-1.5 rounded-lg text-[10px] font-bold transition-all border whitespace-nowrap",
+                        actionItemFilter === f ? "bg-stone-900 border-stone-900 text-white" : "bg-white border-stone-200 text-stone-500 hover:border-stone-400"
+                      )}
+                    >
+                      {f === 'all' ? 'Any' : f === 'with-actions' ? 'Has Actions' : 'No Actions'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               <div className="grid grid-cols-2 gap-2">
                 <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">From</label>
-                  <input 
-                    type="date" 
-                    value={dateRange.start}
-                    onChange={e => setDateRange({ ...dateRange, start: e.target.value })}
-                    className="w-full bg-stone-50 border-none rounded-lg py-1 px-2 text-xs outline-none"
-                  />
+                  <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Sentiment</label>
+                  <select
+                    value={sentimentFilter}
+                    onChange={(e) => setSentimentFilter(e.target.value)}
+                    className="w-full bg-white border border-stone-200 rounded-lg py-1.5 px-2 text-xs font-bold text-stone-600 outline-none focus:border-stone-400"
+                  >
+                    <option value="all">Any Sentiment</option>
+                    <option value="positive">Positive</option>
+                    <option value="neutral">Neutral</option>
+                    <option value="negative">Negative</option>
+                  </select>
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">To</label>
-                  <input 
-                    type="date" 
-                    value={dateRange.end}
-                    onChange={e => setDateRange({ ...dateRange, end: e.target.value })}
-                    className="w-full bg-stone-50 border-none rounded-lg py-1 px-2 text-xs outline-none"
-                  />
+                  <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Sort By</label>
+                  <div className="flex gap-1">
+                    <select
+                      value={sortBy}
+                      onChange={(e) => setSortBy(e.target.value as any)}
+                      className="flex-1 bg-white border border-stone-200 rounded-lg py-1.5 px-2 text-[10px] font-bold text-stone-600 outline-none focus:border-stone-400"
+                    >
+                      <option value="date">Date</option>
+                      <option value="sentiment">Sentiment</option>
+                      <option value="score">Score</option>
+                      <option value="status">Status</option>
+                    </select>
+                    <button 
+                      onClick={() => setSortOrder(o => o === 'asc' ? 'desc' : 'asc')}
+                      className="p-1.5 bg-stone-100 text-stone-500 rounded-lg hover:bg-stone-200 transition-colors"
+                    >
+                      <ArrowUpDown className="w-3 h-3" />
+                    </button>
+                  </div>
                 </div>
               </div>
-              <div className="flex gap-2">
-                <select
-                  value={sentimentFilter}
-                  onChange={(e) => setSentimentFilter(e.target.value)}
-                  className="flex-1 bg-stone-50 border-none rounded-lg py-1.5 px-2 text-xs font-bold text-stone-600 outline-none"
-                >
-                  <option value="all">All Sentiments</option>
-                  <option value="positive">Positive</option>
-                  <option value="neutral">Neutral</option>
-                  <option value="negative">Negative</option>
-                </select>
-                <select
-                  value={sortBy}
-                  onChange={(e) => setSortBy(e.target.value as any)}
-                  className="flex-1 bg-stone-50 border-none rounded-lg py-1.5 px-2 text-xs font-bold text-stone-600 outline-none"
-                >
-                  <option value="date">Sort by Date</option>
-                  <option value="sentiment">Sort by Sentiment</option>
-                  <option value="score">Sort by Score</option>
-                  <option value="status">Sort by Status</option>
-                </select>
-                <button 
-                  onClick={() => setSortOrder(o => o === 'asc' ? 'desc' : 'asc')}
-                  className="p-1.5 bg-stone-50 text-stone-500 rounded-lg hover:bg-stone-100"
-                >
-                  <ArrowUpDown className="w-3 h-3" />
-                </button>
-              </div>
+
               <button 
                 onClick={() => {
                   setDateRange({ start: '', end: '' });
+                  setDatePreset('all');
                   setSentimentFilter('all');
+                  setActionItemFilter('all');
                   setSortBy('date');
                   setSortOrder('desc');
                 }}
-                className="w-full py-1 text-[10px] font-bold text-stone-400 hover:text-stone-600 uppercase tracking-widest"
+                className="w-full py-2 text-[10px] font-black text-stone-400 hover:text-stone-900 uppercase tracking-tighter transition-colors"
               >
-                Reset Filters
+                Clear all filters
               </button>
             </motion.div>
           )}

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../lib/firebase';
 import { collection, query, where, onSnapshot, addDoc, updateDoc, doc, deleteDoc } from 'firebase/firestore';
-import { Plus, Search, Package, MoreVertical, Edit2, Trash2, AlertTriangle, Tag, DollarSign, Layers, Zap } from 'lucide-react';
+import { Plus, Search, Package, MoreVertical, Edit2, Trash2, AlertTriangle, Tag, DollarSign, Layers, Zap, ImagePlus, X as CloseIcon } from 'lucide-react';
 import { cn } from '../lib/utils';
 import UpgradeBanner from './UpgradeBanner';
 import { usePlanLimits } from '../hooks/usePlanLimits';
@@ -14,13 +14,16 @@ export default function InventoryManager({ user, business }: { user: any, busine
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState<any>(null);
   const [variants, setVariants] = useState<any[]>([]);
+  const [imageUrl, setImageUrl] = useState('');
   const { checkLimit } = usePlanLimits(business, { totalProducts: products.length });
 
   useEffect(() => {
     if (editingProduct) {
       setVariants(editingProduct.variants || []);
+      setImageUrl(editingProduct.imageUrl || '');
     } else {
       setVariants([]);
+      setImageUrl('');
     }
   }, [editingProduct]);
 
@@ -63,17 +66,27 @@ export default function InventoryManager({ user, business }: { user: any, busine
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     const formData = new FormData(e.target as HTMLFormElement);
+    
+    let stock = Number(formData.get('stock'));
+    let price = Number(formData.get('price'));
+
+    if (variants.length > 0) {
+      stock = variants.reduce((acc, v) => acc + (v.stock || 0), 0);
+      price = variants[0]?.price || 0; // Use first variant price as representative
+    }
+
     const productData = {
       businessId: business.id,
       ownerUid: user.uid,
       name: formData.get('name'),
       description: formData.get('description'),
-      price: Number(formData.get('price')),
+      price,
       sku: formData.get('sku'),
-      stock: Number(formData.get('stock')),
+      stock,
       threshold: Number(formData.get('threshold')),
       category: formData.get('category'),
       variants,
+      imageUrl,
       status: 'active',
       createdAt: editingProduct ? editingProduct.createdAt : new Date().toISOString(),
       updatedAt: new Date().toISOString()
@@ -267,7 +280,57 @@ export default function InventoryManager({ user, business }: { user: any, busine
                 <Plus className="w-6 h-6 rotate-45" />
               </button>
             </div>
-            <form onSubmit={handleSave} className="p-6 space-y-4">
+            <form onSubmit={handleSave} className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+              {/* Image Upload */}
+              <div className="col-span-2">
+                <label className="block text-xs font-bold text-stone-500 uppercase tracking-wider mb-2">Product Image</label>
+                <div className="flex items-center gap-4">
+                  <div className="w-32 h-32 bg-stone-50 border-2 border-dashed border-stone-200 rounded-3xl flex flex-col items-center justify-center text-stone-400 group relative overflow-hidden">
+                    {imageUrl ? (
+                      <>
+                        <img src={imageUrl} alt="Preview" className="w-full h-full object-cover" />
+                        <button 
+                          type="button" 
+                          onClick={() => setImageUrl('')}
+                          className="absolute top-2 right-2 p-1 bg-white/80 backdrop-blur rounded-full text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          <CloseIcon className="w-3 h-3" />
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <ImagePlus className="w-6 h-6 mb-2" />
+                        <span className="text-[10px] font-bold">Upload Image</span>
+                        <input 
+                          type="text"
+                          placeholder="Paste image URL"
+                          className="absolute inset-0 opacity-0 cursor-pointer"
+                          onChange={e => {
+                            if (business?.plan === 'free') {
+                              alert("Please upgrade to Pro to upload product images.");
+                              return;
+                            }
+                            const url = prompt("Please enter the image URL:");
+                            if (url) setImageUrl(url);
+                          }}
+                        />
+                      </>
+                    )}
+                  </div>
+                  <div className="flex-1 space-y-2">
+                    <p className="text-xs text-stone-500 leading-relaxed">
+                      High-quality images help customers identify products quickly and improve sales conversion.
+                    </p>
+                    {business?.plan === 'free' && (
+                      <div className="inline-flex items-center gap-1.5 px-2 py-1 bg-amber-50 rounded-lg border border-amber-100">
+                        <Zap className="w-3 h-3 text-amber-500 fill-amber-500" />
+                        <span className="text-[10px] font-bold text-amber-700">Pro Feature</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
               <div className="grid grid-cols-2 gap-4">
                 <div className="col-span-2">
                   <label className="block text-xs font-bold text-stone-500 uppercase tracking-wider mb-1">Product Name</label>
@@ -277,17 +340,34 @@ export default function InventoryManager({ user, business }: { user: any, busine
                   <label className="block text-xs font-bold text-stone-500 uppercase tracking-wider mb-1">Description</label>
                   <textarea name="description" defaultValue={editingProduct?.description} className="w-full bg-stone-50 border-none rounded-xl py-2 px-4 text-sm outline-none focus:ring-2 focus:ring-stone-200 h-24" />
                 </div>
-                <div>
+                <div className={cn(variants.length > 0 && "opacity-50 grayscale pointer-events-none")}>
                   <label className="block text-xs font-bold text-stone-500 uppercase tracking-wider mb-1">Price ($)</label>
-                  <input name="price" type="number" step="0.01" defaultValue={editingProduct?.price} required className="w-full bg-stone-50 border-none rounded-xl py-2 px-4 text-sm outline-none focus:ring-2 focus:ring-stone-200" />
+                  <input 
+                    name="price" 
+                    type="number" 
+                    step="0.01" 
+                    defaultValue={editingProduct?.price} 
+                    required={variants.length === 0}
+                    disabled={variants.length > 0} 
+                    className="w-full bg-stone-50 border-none rounded-xl py-2 px-4 text-sm outline-none focus:ring-2 focus:ring-stone-200" 
+                  />
+                  {variants.length > 0 && <p className="text-[10px] text-stone-400 mt-1 font-medium">Prices managed via variants</p>}
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-stone-500 uppercase tracking-wider mb-1">SKU</label>
                   <input name="sku" defaultValue={editingProduct?.sku} className="w-full bg-stone-50 border-none rounded-xl py-2 px-4 text-sm outline-none focus:ring-2 focus:ring-stone-200" />
                 </div>
-                <div>
+                <div className={cn(variants.length > 0 && "opacity-50 grayscale pointer-events-none")}>
                   <label className="block text-xs font-bold text-stone-500 uppercase tracking-wider mb-1">Stock Quantity</label>
-                  <input name="stock" type="number" defaultValue={editingProduct?.stock || 0} required className="w-full bg-stone-50 border-none rounded-xl py-2 px-4 text-sm outline-none focus:ring-2 focus:ring-stone-200" />
+                  <input 
+                    name="stock" 
+                    type="number" 
+                    defaultValue={editingProduct?.stock || 0} 
+                    required={variants.length === 0}
+                    disabled={variants.length > 0}
+                    className="w-full bg-stone-50 border-none rounded-xl py-2 px-4 text-sm outline-none focus:ring-2 focus:ring-stone-200" 
+                  />
+                  {variants.length > 0 && <p className="text-[10px] text-stone-400 mt-1 font-medium">Auto-summed from variants ({variants.reduce((a,v) => a + (v.stock || 0), 0)})</p>}
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-stone-500 uppercase tracking-wider mb-1">Low Stock Alert at</label>
@@ -300,45 +380,58 @@ export default function InventoryManager({ user, business }: { user: any, busine
                 
                 <div className="col-span-2 space-y-3">
                   <div className="flex items-center justify-between">
-                    <label className="block text-xs font-bold text-stone-500 uppercase tracking-wider">Product Variants</label>
-                    <button type="button" onClick={addVariant} className="text-[10px] font-bold text-stone-900 flex items-center gap-1 hover:underline">
+                    <div>
+                      <label className="block text-xs font-bold text-stone-500 uppercase tracking-wider">Product Variants</label>
+                      <p className="text-[10px] text-stone-400 mt-0.5">Define options like size or color with unique stock/price.</p>
+                    </div>
+                    <button type="button" onClick={addVariant} className="px-3 py-1 bg-stone-100 hover:bg-stone-200 rounded-lg text-[10px] font-bold text-stone-900 flex items-center gap-1.5 transition-colors">
                       <Plus className="w-3 h-3" /> Add Variant
                     </button>
                   </div>
                   <div className="space-y-2">
                     {variants.map((v, i) => (
-                      <div key={i} className="flex gap-2 items-center bg-stone-50 p-2 rounded-xl">
+                      <div key={i} className="flex gap-2 items-center bg-stone-50 p-2 rounded-xl border border-stone-100">
                         <input 
-                          placeholder="Size/Color" 
+                          placeholder="e.g. Large / Red" 
                           value={v.name} 
                           onChange={e => updateVariant(i, { name: e.target.value })}
-                          className="flex-1 bg-white border-none rounded-lg py-1 px-3 text-xs outline-none"
+                          className="flex-1 bg-white border border-stone-200 rounded-lg py-1 px-3 text-xs outline-none focus:border-stone-400"
                         />
+                        <div className="relative">
+                          <DollarSign className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-stone-400" />
+                          <input 
+                            type="number" 
+                            placeholder="0.00" 
+                            value={v.price} 
+                            onChange={e => updateVariant(i, { price: Number(e.target.value) })}
+                            className="w-20 bg-white border border-stone-200 rounded-lg py-1 pl-6 pr-2 text-xs outline-none focus:border-stone-400"
+                          />
+                        </div>
                         <input 
                           type="number" 
-                          placeholder="Price" 
-                          value={v.price} 
-                          onChange={e => updateVariant(i, { price: Number(e.target.value) })}
-                          className="w-20 bg-white border-none rounded-lg py-1 px-3 text-xs outline-none"
-                        />
-                        <input 
-                          type="number" 
-                          placeholder="Stock" 
+                          placeholder="Qty" 
                           value={v.stock} 
                           onChange={e => updateVariant(i, { stock: Number(e.target.value) })}
-                          className="w-16 bg-white border-none rounded-lg py-1 px-3 text-xs outline-none"
+                          className="w-16 bg-white border border-stone-200 rounded-lg py-1 px-3 text-xs outline-none focus:border-stone-400"
                         />
-                        <button type="button" onClick={() => removeVariant(i)} className="text-stone-300 hover:text-red-500">
-                          <Trash2 className="w-3 h-3" />
+                        <button type="button" onClick={() => removeVariant(i)} className="p-1.5 text-stone-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors">
+                          <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
                     ))}
+                    {variants.length === 0 && (
+                      <div className="text-center py-4 border-2 border-dashed border-stone-100 rounded-2xl">
+                        <p className="text-[10px] font-bold text-stone-300 uppercase tracking-widest">No variants defined</p>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
-              <div className="pt-4 flex gap-3">
-                <button type="button" onClick={() => { setShowAddModal(false); setEditingProduct(null); }} className="flex-1 px-4 py-2 bg-stone-100 text-stone-600 rounded-xl text-sm font-medium hover:bg-stone-200 transition-colors">Cancel</button>
-                <button type="submit" className="flex-1 px-4 py-2 bg-stone-900 text-white rounded-xl text-sm font-medium hover:bg-stone-800 transition-colors">Save Product</button>
+              <div className="pt-6 sticky bottom-0 bg-white border-t border-stone-100 flex gap-3 pb-2">
+                <button type="button" onClick={() => { setShowAddModal(false); setEditingProduct(null); }} className="flex-1 px-4 py-2.5 bg-stone-100 text-stone-600 rounded-xl text-sm font-bold hover:bg-stone-200 transition-colors">Cancel</button>
+                <button type="submit" className="flex-1 px-4 py-2.5 bg-stone-900 text-white rounded-xl text-sm font-bold hover:bg-stone-800 shadow-lg shadow-stone-900/10 transition-colors">
+                  {editingProduct ? 'Update Product' : 'Create Product'}
+                </button>
               </div>
             </form>
           </div>

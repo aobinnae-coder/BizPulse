@@ -33,7 +33,8 @@ export default function CustomerDirectory({ user, business }: { user: any, busin
   const [newTagName, setNewTagName] = useState('');
 
   // Filtering
-  const [sortBy, setSortBy] = useState<'name' | 'spent' | 'score' | 'recent' | 'tags'>('recent');
+  const [sortBy, setSortBy] = useState<'name' | 'spent' | 'score' | 'recent' | 'tags' | 'activity'>('recent');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [filterTag, setFilterTag] = useState('All');
   const [minSpend, setMinSpend] = useState<number | ''>('');
   const [minScore, setMinScore] = useState<number | ''>('');
@@ -147,6 +148,9 @@ export default function CustomerDirectory({ user, business }: { user: any, busin
 
   const handleSendBulkEmail = async () => {
     if (selectedIds.size === 0 || !bulkEmailSubject || !bulkEmailBody) return;
+    
+    if (!confirm(`Are you sure you want to send this email to ${selectedIds.size} customers?`)) return;
+
     setIsSendingBulkEmail(true);
     let successCount = 0;
     try {
@@ -263,12 +267,15 @@ export default function CustomerDirectory({ user, business }: { user: any, busin
       return matchesSearch && matchesTag && matchesSpend && matchesScore && matchesStart && matchesEnd && matchesLAStart && matchesLAEnd;
     })
     .sort((a, b) => {
-      if (sortBy === 'name') return (a.name || '').localeCompare(b.name || '');
-      if (sortBy === 'spent') return (b.totalSpent || 0) - (a.totalSpent || 0);
-      if (sortBy === 'score') return (b.avgScore || 0) - (a.avgScore || 0);
-      if (sortBy === 'tags') return (a.tags?.[0] || '').localeCompare(b.tags?.[0] || '');
-      if (sortBy === 'recent') return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-      return 0;
+      let comparison = 0;
+      if (sortBy === 'name') comparison = (a.name || '').localeCompare(b.name || '');
+      else if (sortBy === 'spent') comparison = (a.totalSpent || 0) - (b.totalSpent || 0);
+      else if (sortBy === 'score') comparison = (a.avgScore || 0) - (b.avgScore || 0);
+      else if (sortBy === 'tags') comparison = (a.tags?.[0] || '').localeCompare(b.tags?.[0] || '');
+      else if (sortBy === 'recent') comparison = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+      else if (sortBy === 'activity') comparison = new Date(a.updatedAt || a.createdAt).getTime() - new Date(b.updatedAt || b.createdAt).getTime();
+      
+      return sortOrder === 'asc' ? comparison : -comparison;
     });
 
   const toggleSelectAll = () => {
@@ -646,9 +653,38 @@ export default function CustomerDirectory({ user, business }: { user: any, busin
                   <User className="w-10 h-10" />
                 </div>
                 <div>
-                  <h2 className="text-3xl font-bold text-stone-900">{selectedCustomer.name}</h2>
+                  <div className="flex items-center gap-2">
+                    <input 
+                      type="text"
+                      value={selectedCustomer.name || ''}
+                      onChange={(e) => setSelectedCustomer({ ...selectedCustomer, name: e.target.value })}
+                      onBlur={async (e) => {
+                        if (e.target.value !== selectedCustomer.name) {
+                          await updateDoc(doc(db, 'customers', selectedCustomer.id), { name: e.target.value });
+                          setActionFeedback({ message: 'Name updated.', type: 'success' });
+                        }
+                      }}
+                      className="text-3xl font-bold text-stone-900 bg-transparent border-none outline-none focus:ring-0 p-0 w-full"
+                      placeholder="Customer Name"
+                    />
+                  </div>
                   <div className="flex items-center gap-4 mt-2">
-                    <div className="flex items-center gap-1.5 text-sm text-stone-500"><Mail className="w-4 h-4" /> {selectedCustomer.email}</div>
+                    <div className="flex items-center gap-1.5 text-sm text-stone-500">
+                      <Mail className="w-4 h-4" /> 
+                      <input 
+                        type="email"
+                        value={selectedCustomer.email || ''}
+                        onChange={(e) => setSelectedCustomer({ ...selectedCustomer, email: e.target.value })}
+                        onBlur={async (e) => {
+                          if (e.target.value !== selectedCustomer.email) {
+                            await updateDoc(doc(db, 'customers', selectedCustomer.id), { email: e.target.value });
+                            setActionFeedback({ message: 'Email updated.', type: 'success' });
+                          }
+                        }}
+                        className="bg-transparent border-none outline-none text-stone-500 focus:text-stone-900 focus:ring-0 p-0 w-48"
+                        placeholder="email@example.com"
+                      />
+                    </div>
                     <div className="flex items-center gap-1.5 text-sm text-stone-500 group/phone relative">
                       <Phone className="w-4 h-4" />
                       <input 
@@ -873,18 +909,24 @@ export default function CustomerDirectory({ user, business }: { user: any, busin
               </button>
             )}
             <div className="flex items-center gap-2">
-              <ArrowUpDown className="w-4 h-4 text-stone-400" />
               <select 
                 value={sortBy} 
                 onChange={e => setSortBy(e.target.value as any)}
-                className="bg-stone-50 border-none rounded-lg py-1.5 px-3 text-xs font-bold text-stone-600 outline-none"
+                className="bg-stone-50 border border-stone-200 rounded-lg py-1.5 px-3 text-xs font-bold text-stone-600 outline-none hover:border-stone-300 transition-all"
               >
-                <option value="recent">Sort by Recent</option>
-                <option value="name">Sort by Name</option>
-                <option value="spent">Sort by Spend</option>
-                <option value="score">Sort by Score</option>
-                <option value="tags">Sort by Tags</option>
+                <option value="recent">Recently Added</option>
+                <option value="activity">Last Activity</option>
+                <option value="name">Name</option>
+                <option value="spent">Total Spent</option>
+                <option value="score">Avg Score</option>
+                <option value="tags">First Tag</option>
               </select>
+              <button 
+                onClick={() => setSortOrder(o => o === 'asc' ? 'desc' : 'asc')}
+                className="p-1.5 bg-stone-50 text-stone-500 rounded-lg hover:bg-stone-100 hover:text-stone-900 border border-stone-200"
+              >
+                <ArrowUpDown className={cn("w-4 h-4 transition-transform", sortOrder === 'asc' && "rotate-180")} />
+              </button>
             </div>
           </div>
         </div>
