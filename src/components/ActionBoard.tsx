@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../lib/firebase';
 import { collection, query, where, onSnapshot, addDoc, updateDoc, doc, deleteDoc } from 'firebase/firestore';
-import { Plus, MoreVertical, Clock, AlertCircle, CheckCircle2, Trash2, Calendar, X, Save, ArrowUpDown, Filter } from 'lucide-react';
+import { Plus, MoreVertical, Clock, AlertCircle, CheckCircle2, Trash2, Calendar, X, Save, ArrowUpDown, Filter, Check, RotateCcw, Users } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { format } from 'date-fns';
+import { motion, AnimatePresence } from 'motion/react';
 
 const COLUMNS = [
   { id: 'todo', label: 'To Do', color: 'bg-stone-100' },
@@ -23,6 +24,9 @@ export default function ActionBoard({ user, business }: { user: any, business: a
   const [selectedTask, setSelectedTask] = useState<any>(null);
   const [isEditingTask, setIsEditingTask] = useState(false);
   const [editTaskData, setEditTaskData] = useState<any>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [staffFilter, setStaffFilter] = useState('all');
+  const [isBulkProcessing, setIsBulkProcessing] = useState(false);
 
   useEffect(() => {
     if (!business) return;
@@ -77,6 +81,7 @@ export default function ActionBoard({ user, business }: { user: any, business: a
     .filter(item => {
       if (priorityFilter !== 'all' && item.priority !== priorityFilter) return false;
       if (statusFilter !== 'all' && item.status !== statusFilter) return false;
+      if (staffFilter !== 'all' && item.assignedTo !== staffFilter) return false;
       return true;
     })
     .sort((a, b) => {
@@ -85,8 +90,41 @@ export default function ActionBoard({ user, business }: { user: any, business: a
       return sortOrder === 'asc' ? dateA - dateB : dateB - dateA;
     });
 
+  const toggleSelect = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const newSelected = new Set(selectedIds);
+    if (newSelected.has(id)) newSelected.delete(id);
+    else newSelected.add(id);
+    setSelectedIds(newSelected);
+  };
+
+  const handleBulkUpdate = async (updates: any) => {
+    setIsBulkProcessing(true);
+    try {
+      const promises = Array.from(selectedIds).map(id => 
+        updateDoc(doc(db, 'actionItems', id), { ...updates, updatedAt: new Date().toISOString() })
+      );
+      await Promise.all(promises);
+      setSelectedIds(new Set());
+    } finally {
+      setIsBulkProcessing(false);
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (!confirm(`Are you sure you want to delete ${selectedIds.size} tasks?`)) return;
+    setIsBulkProcessing(true);
+    try {
+      const promises = Array.from(selectedIds).map(id => deleteDoc(doc(db, 'actionItems', id)));
+      await Promise.all(promises);
+      setSelectedIds(new Set());
+    } finally {
+      setIsBulkProcessing(false);
+    }
+  };
+
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 pb-32">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-stone-900">Action Items</h1>
@@ -105,6 +143,20 @@ export default function ActionBoard({ user, business }: { user: any, business: a
                 <option value="high">High Priority</option>
                 <option value="medium">Medium Priority</option>
                 <option value="low">Low Priority</option>
+              </select>
+            </div>
+            
+            <div className="flex items-center gap-2 bg-white border border-stone-200 rounded-xl px-3 py-1.5 shadow-sm">
+              <Users className="w-3.5 h-3.5 text-stone-400" />
+              <select
+                value={staffFilter}
+                onChange={(e) => setStaffFilter(e.target.value)}
+                className="bg-transparent border-none text-xs font-bold text-stone-600 outline-none pr-4"
+              >
+                <option value="all">Any Staff</option>
+                {staff.map(s => (
+                  <option key={s.id} value={s.id}>{s.name || s.email}</option>
+                ))}
               </select>
             </div>
             
@@ -142,11 +194,12 @@ export default function ActionBoard({ user, business }: { user: any, business: a
               </button>
             </div>
 
-            {(priorityFilter !== 'all' || statusFilter !== 'all' || sortBy !== 'createdAt' || sortOrder !== 'desc') && (
+            {(priorityFilter !== 'all' || statusFilter !== 'all' || staffFilter !== 'all' || sortBy !== 'createdAt' || sortOrder !== 'desc') && (
               <button 
                 onClick={() => {
                   setPriorityFilter('all');
                   setStatusFilter('all');
+                  setStaffFilter('all');
                   setSortBy('createdAt');
                   setSortOrder('desc');
                 }}
@@ -178,59 +231,159 @@ export default function ActionBoard({ user, business }: { user: any, business: a
             </div>
             
             <div className={cn("flex-1 rounded-3xl p-4 space-y-4 overflow-y-auto", col.color)}>
-              {filteredItems.filter(i => i.status === col.id).map(item => (
-                <div 
-                  key={item.id} 
-                  onClick={() => setSelectedTask(item)}
-                  className="bg-white p-4 rounded-2xl shadow-sm border border-stone-200/50 group cursor-pointer hover:border-stone-300 transition-colors"
-                >
-                  <div className="flex items-start justify-between mb-3">
-                    <div className={cn(
-                      "px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider",
-                      item.priority === 'high' ? "bg-red-50 text-red-600" :
-                      item.priority === 'medium' ? "bg-blue-50 text-blue-600" : "bg-stone-50 text-stone-500"
-                    )}>
-                      {item.priority}
-                    </div>
-                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
-                      {col.id !== 'todo' && <button onClick={() => updateStatus(item.id, 'todo')} className="p-1 hover:bg-stone-50 rounded"><Clock className="w-3 h-3 text-stone-400" /></button>}
-                      {col.id !== 'in-progress' && <button onClick={() => updateStatus(item.id, 'in-progress')} className="p-1 hover:bg-stone-50 rounded"><AlertCircle className="w-3 h-3 text-stone-400" /></button>}
-                      {col.id !== 'done' && <button onClick={() => updateStatus(item.id, 'done')} className="p-1 hover:bg-stone-50 rounded"><CheckCircle2 className="w-3 h-3 text-stone-400" /></button>}
-                      <button onClick={() => deleteDoc(doc(db, 'actionItems', item.id))} className="p-1 hover:bg-red-50 rounded"><Trash2 className="w-3 h-3 text-red-400" /></button>
-                    </div>
-                  </div>
-                  <h4 className="text-sm font-bold text-stone-900 mb-1">{item.title}</h4>
-                  <p className="text-xs text-stone-500 line-clamp-2 mb-4">{item.description}</p>
-                  
-                  {item.assignedTo && (
-                    <div className="flex items-center gap-1.5 mb-3 border border-stone-100 bg-stone-50 w-fit px-2 py-1 rounded-lg">
-                      <div className="w-4 h-4 bg-stone-200 rounded-full flex items-center justify-center text-[8px] font-bold text-stone-600">
-                        {staff.find(s => s.id === item.assignedTo)?.name?.charAt(0) || staff.find(s => s.id === item.assignedTo)?.email?.charAt(0) || '?'}
-                      </div>
-                      <span className="text-[10px] font-medium text-stone-600">
-                        {staff.find(s => s.id === item.assignedTo)?.name || staff.find(s => s.id === item.assignedTo)?.email?.split('@')[0] || 'Unknown'}
-                      </span>
-                    </div>
-                  )}
-
-                  <div className="flex items-center justify-between text-[10px] text-stone-400 font-medium">
-                    <div className="flex items-center gap-2">
-                      <Calendar className="w-3 h-3" />
-                      {format(new Date(item.createdAt), 'MMM dd, yyyy')}
-                    </div>
-                    {item.dueDate && (
-                      <div className="flex items-center gap-1 text-amber-600 bg-amber-50 px-2 py-0.5 rounded">
-                        <Clock className="w-3 h-3" />
-                        Due: {format(new Date(item.dueDate), 'MMM dd')}
-                      </div>
+              <AnimatePresence mode="popLayout">
+                {filteredItems.filter(i => i.status === col.id).map(item => (
+                  <motion.div 
+                    layout
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.95 }}
+                    key={item.id} 
+                    onClick={() => setSelectedTask(item)}
+                    className={cn(
+                      "p-4 rounded-2xl shadow-sm border group cursor-pointer transition-all relative overflow-hidden",
+                      selectedIds.has(item.id) ? "ring-2 ring-stone-900 border-stone-900" : "border-stone-200/50 hover:border-stone-400",
+                      item.priority === 'high' ? "bg-red-50" :
+                      item.priority === 'medium' ? "bg-blue-50" : "bg-stone-50/60"
                     )}
-                  </div>
-                </div>
-              ))}
+                  >
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <div 
+                          onClick={(e) => toggleSelect(item.id, e)}
+                          className={cn(
+                            "w-4 h-4 rounded border transition-colors flex items-center justify-center",
+                            selectedIds.has(item.id) ? "bg-stone-900 border-stone-900" : "border-stone-300 bg-white"
+                          )}
+                        >
+                          {selectedIds.has(item.id) && <Check className="w-2.5 h-2.5 text-white" />}
+                        </div>
+                        <div className={cn(
+                          "px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider",
+                          item.priority === 'high' ? "bg-red-100 text-red-700" :
+                          item.priority === 'medium' ? "bg-blue-100 text-blue-700" : "bg-stone-100 text-stone-600"
+                        )}>
+                          {item.priority}
+                        </div>
+                      </div>
+                      <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
+                        {col.id !== 'todo' && <button onClick={() => updateStatus(item.id, 'todo')} className="p-1 hover:bg-white rounded shadow-sm transition-colors"><Clock className="w-3 h-3 text-stone-400" /></button>}
+                        {col.id !== 'in-progress' && <button onClick={() => updateStatus(item.id, 'in-progress')} className="p-1 hover:bg-white rounded shadow-sm transition-colors"><AlertCircle className="w-3 h-3 text-stone-400" /></button>}
+                        {col.id !== 'done' && (
+                          <motion.button 
+                            whileTap={{ scale: 0.9 }}
+                            onClick={() => updateStatus(item.id, 'done')} 
+                            className="p-1 hover:bg-emerald-50 rounded shadow-sm transition-colors"
+                          >
+                            <CheckCircle2 className="w-3 h-3 text-emerald-500" />
+                          </motion.button>
+                        )}
+                        <button onClick={() => deleteDoc(doc(db, 'actionItems', item.id))} className="p-1 hover:bg-red-50 rounded shadow-sm transition-colors"><Trash2 className="w-3 h-3 text-red-400" /></button>
+                      </div>
+                    </div>
+                    <h4 className="text-sm font-bold text-stone-900 mb-1">{item.title}</h4>
+                    <p className="text-xs text-stone-500 line-clamp-2 mb-4 font-medium leading-relaxed">{item.description}</p>
+                    
+                    <div className="flex items-center justify-between mt-auto">
+                      {item.assignedTo ? (
+                        <div className="flex items-center gap-1.5 border border-white/50 bg-white/40 w-fit px-1.5 py-0.5 rounded-lg backdrop-blur-sm">
+                          <div className="w-3.5 h-3.5 bg-stone-200 rounded-full flex items-center justify-center text-[7px] font-black text-stone-600">
+                            {staff.find(s => s.id === item.assignedTo)?.name?.charAt(0) || staff.find(s => s.id === item.assignedTo)?.email?.charAt(0) || '?'}
+                          </div>
+                          <span className="text-[9px] font-bold text-stone-600">
+                            {staff.find(s => s.id === item.assignedTo)?.name || staff.find(s => s.id === item.assignedTo)?.email?.split('@')[0] || 'Unknown'}
+                          </span>
+                        </div>
+                      ) : <div />}
+
+                      <div className="flex items-center gap-2 text-[10px] text-stone-400 font-bold whitespace-nowrap">
+                        {item.dueDate && (
+                          <div className={cn(
+                            "flex items-center gap-1 px-2 py-0.5 rounded",
+                            new Date(item.dueDate) < new Date() ? "text-red-600 bg-red-50" : "text-amber-600 bg-amber-50"
+                          )}>
+                            <Clock className="w-3 h-3" />
+                            {format(new Date(item.dueDate), 'MMM dd')}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </motion.div>
+                ))}
+              </AnimatePresence>
             </div>
           </div>
         ))}
       </div>
+
+      {/* Bulk Actions Bar */}
+      <AnimatePresence>
+        {selectedIds.size > 0 && (
+          <motion.div 
+            initial={{ y: 100, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 100, opacity: 0 }}
+            className="fixed bottom-8 left-1/2 -translate-x-1/2 bg-stone-900 text-white px-6 py-4 rounded-[32px] shadow-2xl z-[100] flex items-center gap-8 border border-white/10 backdrop-blur-xl"
+          >
+            <div className="flex items-center gap-3 pr-8 border-r border-white/20">
+              <div className="bg-white/20 w-8 h-8 rounded-full flex items-center justify-center text-xs font-black">
+                {selectedIds.size}
+              </div>
+              <span className="text-sm font-bold uppercase tracking-widest text-stone-300">Selected</span>
+            </div>
+
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-black text-stone-500 uppercase tracking-widest">Move to:</span>
+                <div className="flex bg-white/5 p-1 rounded-xl">
+                  {COLUMNS.map(col => (
+                    <button 
+                      key={col.id}
+                      onClick={() => handleBulkUpdate({ status: col.id })}
+                      className="px-3 py-1.5 hover:bg-white/10 rounded-lg text-xs font-bold transition-all"
+                    >
+                      {col.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-black text-stone-500 uppercase tracking-widest">Set Priority:</span>
+                <div className="flex bg-white/5 p-1 rounded-xl">
+                  {['low', 'medium', 'high'].map(p => (
+                    <button 
+                      key={p}
+                      onClick={() => handleBulkUpdate({ priority: p })}
+                      className={cn(
+                        "px-3 py-1.5 hover:bg-white/10 rounded-lg text-xs font-bold transition-all capitalize",
+                        p === 'high' ? "text-red-400" : p === 'medium' ? "text-blue-400" : "text-stone-400"
+                      )}
+                    >
+                      {p}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <button 
+                onClick={handleBulkDelete}
+                className="p-2 hover:bg-red-500/20 text-red-400 rounded-xl transition-all"
+                title="Delete Selected"
+              >
+                <Trash2 className="w-5 h-5" />
+              </button>
+
+              <button 
+                onClick={() => setSelectedIds(new Set())}
+                className="p-2 hover:bg-white/10 text-stone-400 rounded-xl transition-all"
+              >
+                <RotateCcw className="w-5 h-5 transition-transform hover:rotate-180 duration-500" />
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {isAdding && (
         <div className="fixed inset-0 bg-stone-900/60 backdrop-blur-md z-[110] flex items-center justify-center p-4">
@@ -249,6 +402,14 @@ export default function ActionBoard({ user, business }: { user: any, business: a
             </div>
 
             <div className="space-y-6">
+              <div className="flex items-center justify-between px-2 py-3 bg-stone-50 rounded-2xl border border-stone-100">
+                <div className="flex items-center gap-2">
+                  <Calendar className="w-4 h-4 text-stone-400" />
+                  <span className="text-[10px] font-black text-stone-400 uppercase tracking-widest">Entry Date</span>
+                </div>
+                <span className="text-xs font-bold text-stone-600">{format(new Date(), 'MMM dd, yyyy')}</span>
+              </div>
+
               <div className="space-y-2">
                 <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest ml-1">Task Details</label>
                 <input 
@@ -416,6 +577,22 @@ export default function ActionBoard({ user, business }: { user: any, business: a
 
                 <div className="space-y-6">
                   <div className="bg-stone-50/50 rounded-3xl p-6 border border-stone-100 space-y-6">
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest ml-1">Metadata</label>
+                      <div className="bg-white border border-stone-100 rounded-xl p-3 space-y-2">
+                        <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-tight">
+                          <span className="text-stone-400">Created:</span>
+                          <span className="text-stone-600">{format(new Date(selectedTask.createdAt), 'MMM dd, yyyy HH:mm')}</span>
+                        </div>
+                        {selectedTask.updatedAt && (
+                          <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-tight">
+                            <span className="text-stone-400">Updated:</span>
+                            <span className="text-stone-600">{format(new Date(selectedTask.updatedAt), 'MMM dd, yyyy HH:mm')}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
                     <div className="space-y-2">
                       <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest ml-1">Assignment</label>
                       {isEditingTask ? (
