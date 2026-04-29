@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../lib/firebase';
-import { collection, query, where, onSnapshot, addDoc, updateDoc, doc, deleteDoc } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, addDoc, updateDoc, doc, deleteDoc, orderBy } from 'firebase/firestore';
 import { Plus, MoreVertical, Clock, AlertCircle, CheckCircle2, Trash2, Calendar, X, Save, ArrowUpDown, Filter, Check, RotateCcw, Users } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { format } from 'date-fns';
@@ -16,9 +16,20 @@ export default function ActionBoard({ user, business }: { user: any, business: a
   const [items, setItems] = useState<any[]>([]);
   const [staff, setStaff] = useState<any[]>([]);
   const [isAdding, setIsAdding] = useState(false);
-  const [newItem, setNewItem] = useState({ title: '', description: '', priority: 'medium', dueDate: '', assignedTo: '' });
+  const [newItem, setNewItem] = useState({ 
+    title: '', 
+    description: '', 
+    priority: 'medium', 
+    dueDate: '', 
+    assignedTo: '', 
+    parentId: '',
+    recurrence: 'none' 
+  });
   const [priorityFilter, setPriorityFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [dateRangeFilter, setDateRangeFilter] = useState<'all' | 'upcoming' | 'overdue'>('all');
+  const [showMyTasksOnly, setShowMyTasksOnly] = useState(false);
+  const [showOverdueOnly, setShowOverdueOnly] = useState(false);
   const [sortBy, setSortBy] = useState<'createdAt' | 'dueDate'>('createdAt');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [selectedTask, setSelectedTask] = useState<any>(null);
@@ -27,6 +38,11 @@ export default function ActionBoard({ user, business }: { user: any, business: a
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [staffFilter, setStaffFilter] = useState('all');
   const [isBulkProcessing, setIsBulkProcessing] = useState(false);
+
+  const [comments, setComments] = useState<any[]>([]);
+  const [newComment, setNewComment] = useState('');
+  const [subtasks, setSubtasks] = useState<any[]>([]);
+  const [newSubtaskTitle, setNewSubtaskTitle] = useState('');
 
   useEffect(() => {
     if (!business) return;
@@ -46,8 +62,80 @@ export default function ActionBoard({ user, business }: { user: any, business: a
     };
   }, [business]);
 
+  useEffect(() => {
+    if (selectedTask) {
+      const qComments = query(collection(db, 'actionItems', selectedTask.id, 'comments'), orderBy('createdAt', 'desc'));
+      const unsubComments = onSnapshot(qComments, (s) => setComments(s.docs.map(d => ({ id: d.id, ...d.data() }))));
+      
+      const qSubtasks = query(collection(db, 'actionItems', selectedTask.id, 'subtasks'), orderBy('createdAt', 'asc'));
+      const unsubSubtasks = onSnapshot(qSubtasks, (s) => setSubtasks(s.docs.map(d => ({ id: d.id, ...d.data() }))));
+
+      return () => {
+        unsubComments();
+        unsubSubtasks();
+      };
+    }
+  }, [selectedTask]);
+
   const updateStatus = async (id: string, status: string) => {
-    await updateDoc(doc(db, 'actionItems', id), { status });
+    const task = items.find(i => i.id === id);
+    // Dependency Check
+    if (task?.parentId && (status === 'in-progress' || status === 'done')) {
+      const parent = items.find(i => i.id === task.parentId);
+      if (parent && parent.status !== 'done') {
+        alert(`Dependency Error: "${parent.title}" must be "Done" first.`);
+        return;
+      }
+    }
+
+    await updateDoc(doc(db, 'actionItems', id), { 
+      status,
+      updatedAt: new Date().toISOString()
+    });
+
+    // Handle Recurrence
+    if (status === 'done' && task?.recurrence && task.recurrence !== 'none') {
+      const nextDate = new Date(task.dueDate || new Date());
+      if (task.recurrence === 'daily') nextDate.setDate(nextDate.getDate() + 1);
+      else if (task.recurrence === 'weekly') nextDate.setDate(nextDate.getDate() + 7);
+      else if (task.recurrence === 'monthly') nextDate.setMonth(nextDate.getMonth() + 1);
+
+      await addDoc(collection(db, 'actionItems'), {
+        ...task,
+        id: undefined,
+        status: 'todo',
+        dueDate: nextDate.toISOString().split('T')[0],
+        createdAt: new Date().toISOString(),
+        updatedAt: null
+      });
+    }
+  };
+
+  const addComment = async () => {
+    if (!newComment || !selectedTask) return;
+    await addDoc(collection(db, 'actionItems', selectedTask.id, 'comments'), {
+      text: newComment,
+      userId: user.uid,
+      userName: user.displayName || user.email,
+      createdAt: new Date().toISOString()
+    });
+    setNewComment('');
+  };
+
+  const addSubtask = async () => {
+    if (!newSubtaskTitle || !selectedTask) return;
+    await addDoc(collection(db, 'actionItems', selectedTask.id, 'subtasks'), {
+      title: newSubtaskTitle,
+      done: false,
+      createdAt: new Date().toISOString()
+    });
+    setNewSubtaskTitle('');
+  };
+
+  const toggleSubtask = async (subtaskId: string, currentStatus: boolean) => {
+    await updateDoc(doc(db, 'actionItems', selectedTask.id, 'subtasks', subtaskId), {
+      done: !currentStatus
+    });
   };
 
   const addItem = async () => {
@@ -59,7 +147,7 @@ export default function ActionBoard({ user, business }: { user: any, business: a
       status: 'todo',
       createdAt: new Date().toISOString()
     });
-    setNewItem({ title: '', description: '', priority: 'medium', dueDate: '', assignedTo: '' });
+    setNewItem({ title: '', description: '', priority: 'medium', dueDate: '', assignedTo: '', parentId: '', recurrence: 'none' });
     setIsAdding(false);
   };
 
@@ -71,7 +159,9 @@ export default function ActionBoard({ user, business }: { user: any, business: a
       priority: editTaskData.priority,
       status: editTaskData.status,
       dueDate: editTaskData.dueDate,
-      assignedTo: editTaskData.assignedTo || null
+      assignedTo: editTaskData.assignedTo || null,
+      parentId: editTaskData.parentId || null,
+      recurrence: editTaskData.recurrence || 'none'
     });
     setSelectedTask({ ...selectedTask, ...editTaskData });
     setIsEditingTask(false);
@@ -82,6 +172,23 @@ export default function ActionBoard({ user, business }: { user: any, business: a
       if (priorityFilter !== 'all' && item.priority !== priorityFilter) return false;
       if (statusFilter !== 'all' && item.status !== statusFilter) return false;
       if (staffFilter !== 'all' && item.assignedTo !== staffFilter) return false;
+      
+      if (dateRangeFilter === 'overdue') {
+        if (!item.dueDate || item.status === 'done') return false;
+        return new Date(item.dueDate) < new Date(new Date().setHours(0,0,0,0));
+      }
+      if (dateRangeFilter === 'upcoming') {
+        if (!item.dueDate || item.status === 'done') return false;
+        const nextWeek = new Date();
+        nextWeek.setDate(nextWeek.getDate() + 7);
+        const due = new Date(item.dueDate);
+        return due >= new Date(new Date().setHours(0,0,0,0)) && due <= nextWeek;
+      }
+
+      if (showMyTasksOnly) {
+        const userStaff = staff.find(s => s.email === user.email);
+        if (!userStaff || item.assignedTo !== userStaff.id) return false;
+      }
       return true;
     })
     .sort((a, b) => {
@@ -175,6 +282,19 @@ export default function ActionBoard({ user, business }: { user: any, business: a
             </div>
 
             <div className="flex items-center gap-2 bg-white border border-stone-200 rounded-xl px-3 py-1.5 shadow-sm">
+              <Calendar className="w-3.5 h-3.5 text-stone-400" />
+              <select
+                value={dateRangeFilter}
+                onChange={(e) => setDateRangeFilter(e.target.value as any)}
+                className="bg-transparent border-none text-xs font-bold text-stone-600 outline-none pr-4"
+              >
+                <option value="all">Any Date</option>
+                <option value="upcoming">Next 7 Days</option>
+                <option value="overdue">Overdue</option>
+              </select>
+            </div>
+
+            <div className="flex items-center gap-2 bg-white border border-stone-200 rounded-xl px-3 py-1.5 shadow-sm">
               <ArrowUpDown className="w-3.5 h-3.5 text-stone-400" />
               <select
                 value={sortBy}
@@ -194,7 +314,7 @@ export default function ActionBoard({ user, business }: { user: any, business: a
               </button>
             </div>
 
-            {(priorityFilter !== 'all' || statusFilter !== 'all' || staffFilter !== 'all' || sortBy !== 'createdAt' || sortOrder !== 'desc') && (
+            {(priorityFilter !== 'all' || statusFilter !== 'all' || staffFilter !== 'all' || sortBy !== 'createdAt' || sortOrder !== 'desc' || showMyTasksOnly || showOverdueOnly) && (
               <button 
                 onClick={() => {
                   setPriorityFilter('all');
@@ -202,6 +322,8 @@ export default function ActionBoard({ user, business }: { user: any, business: a
                   setStaffFilter('all');
                   setSortBy('createdAt');
                   setSortOrder('desc');
+                  setShowMyTasksOnly(false);
+                  setShowOverdueOnly(false);
                 }}
                 className="text-[10px] font-bold text-stone-400 uppercase tracking-widest hover:text-stone-900 transition-colors px-2"
               >
@@ -209,12 +331,36 @@ export default function ActionBoard({ user, business }: { user: any, business: a
               </button>
             )}
           </div>
-          <button 
-            onClick={() => setIsAdding(true)}
-            className="px-6 py-2.5 bg-stone-900 text-white rounded-xl text-sm font-bold hover:bg-stone-800 shadow-xl shadow-stone-900/10 transition-all flex items-center gap-2 active:scale-95"
-          >
-            <Plus className="w-4 h-4" /> New Task
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowMyTasksOnly(!showMyTasksOnly)}
+              className={cn(
+                "px-4 py-2 rounded-xl text-xs font-bold transition-all border",
+                showMyTasksOnly 
+                  ? "bg-stone-900 text-white border-stone-900" 
+                  : "bg-white text-stone-600 border-stone-200 hover:bg-stone-50"
+              )}
+            >
+              My Tasks
+            </button>
+            <button
+              onClick={() => setShowOverdueOnly(!showOverdueOnly)}
+              className={cn(
+                "px-4 py-2 rounded-xl text-xs font-bold transition-all border",
+                showOverdueOnly 
+                  ? "bg-red-600 text-white border-red-600" 
+                  : "bg-white text-stone-600 border-stone-200 hover:bg-stone-50"
+              )}
+            >
+              Overdue
+            </button>
+            <button 
+              onClick={() => setIsAdding(true)}
+              className="px-6 py-2.5 bg-stone-900 text-white rounded-xl text-sm font-bold hover:bg-stone-800 shadow-xl shadow-stone-900/10 transition-all flex items-center gap-2 active:scale-95 ml-2"
+            >
+              <Plus className="w-4 h-4" /> New Task
+            </button>
+          </div>
         </div>
       </div>
 
@@ -485,6 +631,50 @@ export default function ActionBoard({ user, business }: { user: any, business: a
                   </div>
                 </div>
               </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest ml-1">Assigned To</label>
+                  <select 
+                    value={newItem.assignedTo}
+                    onChange={e => setNewItem({...newItem, assignedTo: e.target.value})}
+                    className="w-full p-4 bg-stone-50 border border-stone-100 rounded-2xl outline-none focus:ring-2 focus:ring-stone-200 transition-all text-sm font-bold"
+                  >
+                    <option value="">Unassigned</option>
+                    {staff.map(s => (
+                      <option key={s.id} value={s.id}>{s.name || s.email}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest ml-1">Recurrence</label>
+                  <select 
+                    value={newItem.recurrence}
+                    onChange={e => setNewItem({...newItem, recurrence: e.target.value})}
+                    className="w-full p-4 bg-stone-50 border border-stone-100 rounded-2xl outline-none focus:ring-2 focus:ring-stone-200 transition-all text-sm font-bold"
+                  >
+                    <option value="none">One-time</option>
+                    <option value="daily">Daily</option>
+                    <option value="weekly">Weekly</option>
+                    <option value="monthly">Monthly</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest ml-1">Dependency (Parent Task)</label>
+                <select 
+                  value={newItem.parentId}
+                  onChange={e => setNewItem({...newItem, parentId: e.target.value})}
+                  className="w-full p-4 bg-stone-50 border border-stone-100 rounded-2xl outline-none focus:ring-2 focus:ring-stone-200 transition-all text-sm font-bold"
+                >
+                  <option value="">No dependency</option>
+                  {items.map(i => (
+                    <option key={i.id} value={i.id}>{i.title}</option>
+                  ))}
+                </select>
+              </div>
             </div>
 
             <div className="mt-10 flex gap-4">
@@ -680,6 +870,141 @@ export default function ActionBoard({ user, business }: { user: any, business: a
                           {selectedTask.dueDate ? format(new Date(selectedTask.dueDate), 'MMM dd, yyyy') : 'No target set'}
                         </div>
                       )}
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest ml-1">Dependency</label>
+                      {isEditingTask ? (
+                        <select 
+                          value={editTaskData?.parentId || ''}
+                          onChange={e => setEditTaskData({...editTaskData, parentId: e.target.value})}
+                          className="w-full p-3 bg-white border border-stone-200 rounded-xl outline-none text-xs font-bold"
+                        >
+                          <option value="">No dependency</option>
+                          {items.filter(i => i.id !== selectedTask.id).map(i => (
+                            <option key={i.id} value={i.id}>{i.title}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <div className="flex items-center gap-2 text-stone-900 text-sm font-bold">
+                          <AlertCircle className="w-4 h-4 text-stone-400" />
+                          {selectedTask.parentId 
+                            ? items.find(i => i.id === selectedTask.parentId)?.title || 'Unknown Task'
+                            : 'Standalone Task'}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest ml-1">Recurrence</label>
+                      {isEditingTask ? (
+                        <select 
+                          value={editTaskData?.recurrence || 'none'}
+                          onChange={e => setEditTaskData({...editTaskData, recurrence: e.target.value})}
+                          className="w-full p-3 bg-white border border-stone-200 rounded-xl outline-none text-xs font-bold"
+                        >
+                          <option value="none">One-time</option>
+                          <option value="daily">Daily</option>
+                          <option value="weekly">Weekly</option>
+                          <option value="monthly">Monthly</option>
+                        </select>
+                      ) : (
+                        <div className="flex items-center gap-2 text-stone-900 text-sm font-bold capitalize">
+                          <RotateCcw className="w-4 h-4 text-stone-400" />
+                          {selectedTask.recurrence || 'One-time'}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-10">
+                  <div className="space-y-6">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-lg font-bold text-stone-900">Sub-tasks</h3>
+                      <span className="text-[10px] font-black text-stone-400 uppercase tracking-widest">
+                        {subtasks.filter(s => s.done).length}/{subtasks.length} Completed
+                      </span>
+                    </div>
+                    <div className="space-y-3">
+                      {subtasks.map(st => (
+                        <div key={st.id} className="flex items-center gap-3 p-4 bg-stone-50 rounded-2xl border border-stone-100 group/sub">
+                          <button 
+                            onClick={() => toggleSubtask(st.id, st.done)}
+                            className={cn(
+                              "w-5 h-5 rounded-md border flex items-center justify-center transition-colors",
+                              st.done ? "bg-emerald-500 border-emerald-500 text-white" : "border-stone-200 bg-white"
+                            )}
+                          >
+                            {st.done && <Check className="w-3 h-3" />}
+                          </button>
+                          <span className={cn("text-xs font-bold", st.done ? "text-stone-400 line-through" : "text-stone-700")}>
+                            {st.title}
+                          </span>
+                          <button 
+                            onClick={() => deleteDoc(doc(db, 'actionItems', selectedTask.id, 'subtasks', st.id))}
+                            className="ml-auto opacity-0 group-hover/sub:opacity-100 p-1 hover:bg-red-50 text-red-400 rounded-lg transition-all"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ))}
+                      <div className="flex gap-2">
+                        <input 
+                          type="text" 
+                          placeholder="Add a next step..."
+                          value={newSubtaskTitle}
+                          onChange={e => setNewSubtaskTitle(e.target.value)}
+                          onKeyDown={e => e.key === 'Enter' && addSubtask()}
+                          className="flex-1 bg-stone-50 border border-stone-100 rounded-xl px-4 py-3 text-xs font-bold outline-none focus:ring-1 focus:ring-stone-200"
+                        />
+                        <button 
+                          onClick={addSubtask}
+                          className="px-6 py-3 bg-stone-900 text-white rounded-xl text-xs font-bold hover:bg-stone-800 transition-all shadow-lg shadow-stone-900/10"
+                        >
+                          Add
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-6">
+                    <h3 className="text-lg font-bold text-stone-900">Collaboration & Comments</h3>
+                    <div className="space-y-6">
+                      <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-stone-200">
+                        {comments.length === 0 && (
+                          <div className="text-center py-8">
+                            <Users className="w-8 h-8 text-stone-200 mx-auto mb-2" />
+                            <p className="text-xs text-stone-400 font-bold italic">No comments yet. Start the conversation!</p>
+                          </div>
+                        )}
+                        {comments.map(c => (
+                          <div key={c.id} className="space-y-1.5">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] font-black text-stone-900 uppercase tracking-widest">{c.userName}</span>
+                              <span className="text-[9px] text-stone-400 font-bold">{format(new Date(c.createdAt), 'MMM dd, HH:mm')}</span>
+                            </div>
+                            <div className="p-4 bg-stone-50 rounded-[24px] border border-stone-100 text-xs font-medium text-stone-600 leading-relaxed shadow-sm">
+                              {c.text}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="space-y-3">
+                        <textarea 
+                          placeholder="Add your thoughts or updates..."
+                          value={newComment}
+                          onChange={e => setNewComment(e.target.value)}
+                          className="w-full bg-stone-50 border border-stone-100 rounded-[24px] px-5 py-4 text-xs font-medium outline-none focus:ring-2 focus:ring-stone-200 resize-none h-24"
+                        />
+                        <button 
+                          onClick={addComment}
+                          disabled={!newComment}
+                          className="w-full py-4 bg-stone-900 text-white rounded-2xl text-xs font-bold hover:bg-stone-800 transition-all shadow-xl shadow-stone-900/10 disabled:opacity-50"
+                        >
+                          Post Update
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>

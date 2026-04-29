@@ -82,6 +82,17 @@ export default function App() {
     }
   }, [isDarkMode]);
 
+  const [isPlatformSuspended, setIsPlatformSuspended] = useState(false);
+
+  useEffect(() => {
+    const unsubscribe = onSnapshot(doc(db, 'platformSettings', 'global'), (doc) => {
+      if (doc.exists()) {
+        setIsPlatformSuspended(doc.data().isPlatformSuspended || false);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
   useEffect(() => {
     // Check if we are on a public survey link or storefront
     const params = new URLSearchParams(window.location.search);
@@ -137,6 +148,24 @@ export default function App() {
           transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
           className="w-8 h-8 border-4 border-stone-200 border-t-stone-800 rounded-full"
         />
+      </div>
+    );
+  }
+
+  if (isPlatformSuspended && user?.email !== 'a.obinnae@skyrouteusa.com') {
+    return (
+      <div className="min-h-screen bg-stone-50 flex items-center justify-center p-4 text-center">
+        <div className="max-w-md w-full bg-white p-12 rounded-[40px] shadow-xl border border-stone-100">
+          <AlertTriangle className="w-16 h-16 text-amber-500 mx-auto mb-6" />
+          <h1 className="text-3xl font-black text-stone-900 mb-2">Platform Maintenance</h1>
+          <p className="text-stone-500 mb-8">BizCompana is currently undergoing scheduled maintenance or the platform service has been temporarily suspended by the owner.</p>
+          <button 
+            onClick={handleLogout}
+            className="text-stone-400 font-bold hover:text-stone-900 uppercase tracking-widest text-xs"
+          >
+            Sign Out
+          </button>
+        </div>
       </div>
     );
   }

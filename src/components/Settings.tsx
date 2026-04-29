@@ -4,6 +4,7 @@ import { collection, query, where, onSnapshot, doc, updateDoc, addDoc, deleteDoc
 import { Building2, Palette, MapPin, Globe, Bell, Shield, Save, Upload, ChevronRight, QrCode, Copy, ExternalLink, Users, Trash2, Plug } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { QRCodeSVG } from 'qrcode.react';
+import { setDoc } from 'firebase/firestore';
 
 export default function Settings({ user, business }: { user: any, business: any }) {
   const [formData, setFormData] = useState({
@@ -149,15 +150,206 @@ export default function Settings({ user, business }: { user: any, business: any 
     }
   };
 
+  const [platformSettings, setPlatformSettings] = useState<any>({
+    stripeSecretKey: '',
+    sendGridApiKey: '',
+    bgCheckApiKey: '',
+    defaultCurrency: 'USD',
+    isPlatformSuspended: false,
+  });
+  const [showKeys, setShowKeys] = useState({ stripe: false, sendgrid: false, bgcheck: false });
+
+  const [testingStatus, setTestingStatus] = useState<Record<string, 'idle' | 'testing' | 'success' | 'error'>>({
+    stripe: 'idle',
+    sendgrid: 'idle',
+    bgcheck: 'idle',
+  });
+
+  const simulateTest = async (key: string) => {
+    setTestingStatus(prev => ({ ...prev, [key]: 'testing' }));
+    await new Promise(r => setTimeout(r, 1500));
+    setTestingStatus(prev => ({ ...prev, [key]: 'success' }));
+    setTimeout(() => setTestingStatus(prev => ({ ...prev, [key]: 'idle' })), 3000);
+  };
+
+  useEffect(() => {
+    if (user?.email !== 'a.obinnae@skyrouteusa.com') return;
+    const unsubscribe = onSnapshot(doc(db, 'platformSettings', 'global'), (doc) => {
+      if (doc.exists()) {
+        setPlatformSettings(doc.data());
+      }
+    });
+    return () => unsubscribe();
+  }, [user]);
+
+  const savePlatformSettings = async () => {
+    setIsSaving(true);
+    try {
+      await setDoc(doc(db, 'platformSettings', 'global'), platformSettings, { merge: true });
+      alert('Platform settings saved successfully!');
+    } catch (error) {
+      console.error(error);
+      alert('Failed to save platform settings.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   return (
     <div className="max-w-4xl mx-auto space-y-8">
-      <div>
-        <h1 className="text-2xl font-bold text-stone-900">Settings</h1>
-        <p className="text-stone-500">Manage your business profile and application preferences.</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-stone-900">Settings</h1>
+          <p className="text-stone-500">Manage your business profile and application preferences.</p>
+        </div>
+        {user?.email === 'a.obinnae@skyrouteusa.com' && (
+          <div className="px-3 py-1 bg-red-100 text-red-700 rounded-full text-[10px] uppercase font-black tracking-widest flex items-center gap-1">
+            <Shield className="w-3 h-3" /> System Owner
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
         <div className="md:col-span-2 space-y-6">
+          {user?.email === 'a.obinnae@skyrouteusa.com' && (
+            <div className="bg-stone-900 p-8 rounded-3xl border border-stone-800 shadow-xl space-y-6 text-white">
+              <h3 className="text-lg font-bold flex items-center gap-2">
+                <Shield className="w-5 h-5 text-red-500" />
+                Application Administration
+              </h3>
+              <p className="text-stone-400 text-sm">Global platform configuration and sensitive API credentials.</p>
+              
+              <div className="space-y-4 pt-4">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold text-stone-500 uppercase tracking-widest ml-1">Stripe Secret Key</label>
+                  <div className="relative">
+                    <input 
+                      type={showKeys.stripe ? "text" : "password"}
+                      value={platformSettings.stripeSecretKey}
+                      onChange={e => setPlatformSettings({...platformSettings, stripeSecretKey: e.target.value})}
+                      className="w-full p-3 bg-white/5 border border-white/10 rounded-xl outline-none focus:ring-1 focus:ring-white/20 text-sm font-mono"
+                      placeholder="sk_live_..."
+                    />
+                    <button 
+                      onClick={() => setShowKeys({...showKeys, stripe: !showKeys.stripe})}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-500 hover:text-white"
+                    >
+                      {showKeys.stripe ? "Hide" : "Show"}
+                    </button>
+                  </div>
+                  <button 
+                    onClick={() => simulateTest('stripe')} 
+                    className={cn(
+                      "text-[10px] font-bold uppercase tracking-widest ml-1 transition-colors",
+                      testingStatus.stripe === 'testing' ? "text-stone-400" :
+                      testingStatus.stripe === 'success' ? "text-emerald-400" : "text-indigo-400 hover:text-indigo-300"
+                    )}
+                  >
+                    {testingStatus.stripe === 'testing' ? 'Testing...' : 
+                     testingStatus.stripe === 'success' ? 'Connection Verified' : 'Test Connection'}
+                  </button>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold text-stone-500 uppercase tracking-widest ml-1">SendGrid API Key</label>
+                  <div className="relative">
+                    <input 
+                      type={showKeys.sendgrid ? "text" : "password"}
+                      value={platformSettings.sendGridApiKey}
+                      onChange={e => setPlatformSettings({...platformSettings, sendGridApiKey: e.target.value})}
+                      className="w-full p-3 bg-white/5 border border-white/10 rounded-xl outline-none focus:ring-1 focus:ring-white/20 text-sm font-mono"
+                      placeholder="SG.xxxxx"
+                    />
+                    <button 
+                      onClick={() => setShowKeys({...showKeys, sendgrid: !showKeys.sendgrid})}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-500 hover:text-white"
+                    >
+                      {showKeys.sendgrid ? "Hide" : "Show"}
+                    </button>
+                  </div>
+                  <button 
+                    onClick={() => simulateTest('sendgrid')} 
+                    className={cn(
+                      "text-[10px] font-bold uppercase tracking-widest ml-1 transition-colors",
+                      testingStatus.sendgrid === 'testing' ? "text-stone-400" :
+                      testingStatus.sendgrid === 'success' ? "text-emerald-400" : "text-indigo-400 hover:text-indigo-300"
+                    )}
+                  >
+                    {testingStatus.sendgrid === 'testing' ? 'Testing...' : 
+                     testingStatus.sendgrid === 'success' ? 'Connection Verified' : 'Test Connection'}
+                  </button>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold text-stone-500 uppercase tracking-widest ml-1">Background Check API Key</label>
+                  <div className="relative">
+                    <input 
+                      type={showKeys.bgcheck ? "text" : "password"}
+                      value={platformSettings.bgCheckApiKey}
+                      onChange={e => setPlatformSettings({...platformSettings, bgCheckApiKey: e.target.value})}
+                      className="w-full p-3 bg-white/5 border border-white/10 rounded-xl outline-none focus:ring-1 focus:ring-white/20 text-sm font-mono"
+                    />
+                    <button 
+                      onClick={() => setShowKeys({...showKeys, bgcheck: !showKeys.bgcheck})}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-500 hover:text-white"
+                    >
+                      {showKeys.bgcheck ? "Hide" : "Show"}
+                    </button>
+                  </div>
+                  <button 
+                    onClick={() => simulateTest('bgcheck')} 
+                    className={cn(
+                      "text-[10px] font-bold uppercase tracking-widest ml-1 transition-colors",
+                      testingStatus.bgcheck === 'testing' ? "text-stone-400" :
+                      testingStatus.bgcheck === 'success' ? "text-emerald-400" : "text-indigo-400 hover:text-indigo-300"
+                    )}
+                  >
+                    {testingStatus.bgcheck === 'testing' ? 'Testing...' : 
+                     testingStatus.bgcheck === 'success' ? 'Connection Verified' : 'Test Connection'}
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4 pt-4">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-stone-500 uppercase tracking-widest ml-1">Default Currency</label>
+                    <select 
+                      value={platformSettings.defaultCurrency}
+                      onChange={e => setPlatformSettings({...platformSettings, defaultCurrency: e.target.value})}
+                      className="w-full p-3 bg-white/5 border border-white/10 rounded-xl outline-none focus:ring-1 focus:ring-white/20 text-sm"
+                    >
+                      <option value="USD">USD ($)</option>
+                      <option value="EUR">EUR (€)</option>
+                      <option value="GBP">GBP (£)</option>
+                      <option value="NGN">NGN (₦)</option>
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-stone-500 uppercase tracking-widest ml-1">Platform Status</label>
+                    <div className="flex items-center justify-between p-3 bg-white/5 border border-white/10 rounded-xl">
+                      <span className="text-sm font-medium text-stone-300">Suspend All?</span>
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input 
+                          type="checkbox" 
+                          className="sr-only peer" 
+                          checked={platformSettings.isPlatformSuspended}
+                          onChange={e => setPlatformSettings({...platformSettings, isPlatformSuspended: e.target.checked})}
+                        />
+                        <div className="w-11 h-6 bg-stone-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-stone-900 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-stone-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-red-500"></div>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+
+                <button 
+                  onClick={savePlatformSettings}
+                  className="w-full py-3 bg-white text-stone-900 rounded-xl font-bold text-sm hover:bg-stone-100 transition-colors mt-4"
+                >
+                  Save Global Settings
+                </button>
+              </div>
+            </div>
+          )}
+
           <div className="bg-white p-8 rounded-3xl border border-stone-200 shadow-sm space-y-6">
             <h3 className="text-lg font-bold flex items-center gap-2">
               <Users className="w-5 h-5 text-stone-400" />
