@@ -84,8 +84,8 @@ export const PLANS: Plan[] = [
   {
     id: 'pro',
     name: 'Pro',
-    priceMonthly: 29,
-    priceYearly: 24,
+    priceMonthly: 19,
+    priceYearly: 15,
     isPopular: true,
     description: 'Advanced tools to help your business grow and scale.',
     entitlements: {
@@ -105,7 +105,7 @@ export const PLANS: Plan[] = [
         postPurchaseFeedback: true,
         analytics: 'standard',
         csvExport: true,
-        actionBoard: false,
+        actionBoard: true,
         sentimentTagging: false,
         recurringIssueDetection: false,
         automatedCampaigns: false,
@@ -124,8 +124,8 @@ export const PLANS: Plan[] = [
   {
     id: 'growth',
     name: 'Growth',
-    priceMonthly: 79,
-    priceYearly: 69,
+    priceMonthly: 49,
+    priceYearly: 39,
     description: 'Deep analytics and automated workflows for established businesses.',
     entitlements: {
       maxUsers: 5,
@@ -163,8 +163,8 @@ export const PLANS: Plan[] = [
   {
     id: 'premium',
     name: 'Premium',
-    priceMonthly: 199,
-    priceYearly: 169,
+    priceMonthly: 99,
+    priceYearly: 79,
     description: 'The ultimate operating system for multi-location enterprises.',
     entitlements: {
       maxUsers: 15,

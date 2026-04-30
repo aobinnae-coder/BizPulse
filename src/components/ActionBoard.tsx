@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../lib/firebase';
 import { collection, query, where, onSnapshot, addDoc, updateDoc, doc, deleteDoc, orderBy } from 'firebase/firestore';
-import { Plus, MoreVertical, Clock, AlertCircle, CheckCircle2, Trash2, Calendar, X, Save, ArrowUpDown, Filter, Check, RotateCcw, Users, Paperclip, FileText, Download } from 'lucide-react';
+import { Plus, MoreVertical, Clock, AlertCircle, CheckCircle2, Trash2, Calendar, X, Save, ArrowUpDown, Filter, Check, RotateCcw, Users, Paperclip, FileText, Download, GitBranch } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { format } from 'date-fns';
 import { motion, AnimatePresence } from 'motion/react';
@@ -473,7 +473,22 @@ export default function ActionBoard({ user, business }: { user: any, business: a
                         <button onClick={() => deleteDoc(doc(db, 'actionItems', item.id))} className="p-1 hover:bg-red-50 rounded shadow-sm transition-colors"><Trash2 className="w-3 h-3 text-red-400" /></button>
                       </div>
                     </div>
-                    <h4 className="text-sm font-bold text-stone-900 mb-1">{item.title}</h4>
+                    <h4 className="text-sm font-bold text-stone-900 mb-1 flex items-center gap-2">
+                      {item.title}
+                      {item.recurrence && item.recurrence !== 'none' && (
+                        <div title={`Recurring: ${item.recurrence}`}>
+                          <RotateCcw className="w-3 h-3 text-emerald-500" />
+                        </div>
+                      )}
+                      {item.parentId && (
+                        <div className="flex items-center gap-1" title={`Depends on: ${items.find(i => i.id === item.parentId)?.title}`}>
+                          <GitBranch className={cn(
+                            "w-3 h-3",
+                            items.find(i => i.id === item.parentId)?.status === 'done' ? "text-emerald-500" : "text-amber-500 animate-pulse"
+                          )} />
+                        </div>
+                      )}
+                    </h4>
                     <p className="text-xs text-stone-500 line-clamp-2 mb-4 font-medium leading-relaxed">{item.description}</p>
                     
                     <div className="flex items-center justify-between mt-auto">
@@ -1012,9 +1027,19 @@ export default function ActionBoard({ user, business }: { user: any, business: a
                               <p className="text-[10px] font-bold text-stone-900 truncate">{file.name}</p>
                               <p className="text-[8px] font-bold text-stone-400 uppercase">{file.size} • {file.type.split('/')[1] || 'FILE'}</p>
                             </div>
-                            <button className="p-1.5 hover:bg-stone-50 text-stone-300 hover:text-stone-900 rounded-lg transition-all">
+                            <a 
+                              href={file.url} 
+                              download={file.name}
+                              onClick={(e) => {
+                                if (file.url === '#') {
+                                  e.preventDefault();
+                                  alert('Simulating file download: ' + file.name);
+                                }
+                              }}
+                              className="p-1.5 hover:bg-stone-50 text-stone-300 hover:text-stone-900 rounded-lg transition-all"
+                            >
                               <Download className="w-3.5 h-3.5" />
-                            </button>
+                            </a>
                             {!isEditingTask && (
                               <button 
                                 onClick={() => removeAttachment(file.id)}
