@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../lib/firebase';
 import { collection, query, where, onSnapshot, addDoc, updateDoc, doc, deleteDoc, orderBy } from 'firebase/firestore';
-import { Plus, MoreVertical, Clock, AlertCircle, CheckCircle2, Trash2, Calendar, X, Save, ArrowUpDown, Filter, Check, RotateCcw, Users } from 'lucide-react';
+import { Plus, MoreVertical, Clock, AlertCircle, CheckCircle2, Trash2, Calendar, X, Save, ArrowUpDown, Filter, Check, RotateCcw, Users, Paperclip, FileText, Download } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { format } from 'date-fns';
 import { motion, AnimatePresence } from 'motion/react';
@@ -23,7 +23,8 @@ export default function ActionBoard({ user, business }: { user: any, business: a
     dueDate: '', 
     assignedTo: '', 
     parentId: '',
-    recurrence: 'none' 
+    recurrence: 'none',
+    recurrenceEndDate: ''
   });
   const [priorityFilter, setPriorityFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -100,14 +101,17 @@ export default function ActionBoard({ user, business }: { user: any, business: a
       else if (task.recurrence === 'weekly') nextDate.setDate(nextDate.getDate() + 7);
       else if (task.recurrence === 'monthly') nextDate.setMonth(nextDate.getMonth() + 1);
 
-      await addDoc(collection(db, 'actionItems'), {
-        ...task,
-        id: undefined,
-        status: 'todo',
-        dueDate: nextDate.toISOString().split('T')[0],
-        createdAt: new Date().toISOString(),
-        updatedAt: null
-      });
+      const recurrenceEndDate = task.recurrenceEndDate ? new Date(task.recurrenceEndDate) : null;
+      if (!recurrenceEndDate || nextDate <= recurrenceEndDate) {
+        await addDoc(collection(db, 'actionItems'), {
+          ...task,
+          id: undefined,
+          status: 'todo',
+          dueDate: nextDate.toISOString().split('T')[0],
+          createdAt: new Date().toISOString(),
+          updatedAt: null
+        });
+      }
     }
   };
 
@@ -145,10 +149,51 @@ export default function ActionBoard({ user, business }: { user: any, business: a
       businessId: business.id,
       ownerUid: user.uid,
       status: 'todo',
+      attachments: [],
       createdAt: new Date().toISOString()
     });
-    setNewItem({ title: '', description: '', priority: 'medium', dueDate: '', assignedTo: '', parentId: '', recurrence: 'none' });
+    setNewItem({ 
+      title: '', 
+      description: '', 
+      priority: 'medium', 
+      dueDate: '', 
+      assignedTo: '', 
+      parentId: '', 
+      recurrence: 'none',
+      recurrenceEndDate: '' 
+    });
     setIsAdding(false);
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !selectedTask) return;
+
+    // Simulate file upload metadata storage
+    const newAttachment = {
+      id: Math.random().toString(36).substr(2, 9),
+      name: file.name,
+      size: (file.size / 1024).toFixed(1) + ' KB',
+      type: file.type,
+      createdAt: new Date().toISOString(),
+      // In a real app, this would be a Storage URL
+      url: '#' 
+    };
+
+    const taskRef = doc(db, 'actionItems', selectedTask.id);
+    const updatedAttachments = [...(selectedTask.attachments || []), newAttachment];
+    
+    await updateDoc(taskRef, { attachments: updatedAttachments });
+    setSelectedTask({ ...selectedTask, attachments: updatedAttachments });
+  };
+
+  const removeAttachment = async (attachmentId: string) => {
+    if (!selectedTask) return;
+    const taskRef = doc(db, 'actionItems', selectedTask.id);
+    const updatedAttachments = (selectedTask.attachments || []).filter((a: any) => a.id !== attachmentId);
+    
+    await updateDoc(taskRef, { attachments: updatedAttachments });
+    setSelectedTask({ ...selectedTask, attachments: updatedAttachments });
   };
 
   const saveEditTask = async () => {
@@ -161,7 +206,8 @@ export default function ActionBoard({ user, business }: { user: any, business: a
       dueDate: editTaskData.dueDate,
       assignedTo: editTaskData.assignedTo || null,
       parentId: editTaskData.parentId || null,
-      recurrence: editTaskData.recurrence || 'none'
+      recurrence: editTaskData.recurrence || 'none',
+      recurrenceEndDate: editTaskData.recurrenceEndDate || null
     });
     setSelectedTask({ ...selectedTask, ...editTaskData });
     setIsEditingTask(false);
@@ -660,6 +706,18 @@ export default function ActionBoard({ user, business }: { user: any, business: a
                     <option value="monthly">Monthly</option>
                   </select>
                 </div>
+
+                {newItem.recurrence !== 'none' && (
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest ml-1">End Recurrence</label>
+                    <input 
+                      type="date" 
+                      value={newItem.recurrenceEndDate}
+                      onChange={e => setNewItem({...newItem, recurrenceEndDate: e.target.value})}
+                      className="w-full p-4 bg-stone-50 border border-stone-100 rounded-2xl outline-none focus:ring-2 focus:ring-stone-200 transition-all text-sm font-bold"
+                    />
+                  </div>
+                )}
               </div>
 
               <div className="space-y-2">
@@ -898,22 +956,76 @@ export default function ActionBoard({ user, business }: { user: any, business: a
                     <div className="space-y-2">
                       <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest ml-1">Recurrence</label>
                       {isEditingTask ? (
-                        <select 
-                          value={editTaskData?.recurrence || 'none'}
-                          onChange={e => setEditTaskData({...editTaskData, recurrence: e.target.value})}
-                          className="w-full p-3 bg-white border border-stone-200 rounded-xl outline-none text-xs font-bold"
-                        >
-                          <option value="none">One-time</option>
-                          <option value="daily">Daily</option>
-                          <option value="weekly">Weekly</option>
-                          <option value="monthly">Monthly</option>
-                        </select>
+                        <div className="space-y-3">
+                          <select 
+                            value={editTaskData?.recurrence || 'none'}
+                            onChange={e => setEditTaskData({...editTaskData, recurrence: e.target.value})}
+                            className="w-full p-3 bg-white border border-stone-200 rounded-xl outline-none text-xs font-bold"
+                          >
+                            <option value="none">One-time</option>
+                            <option value="daily">Daily</option>
+                            <option value="weekly">Weekly</option>
+                            <option value="monthly">Monthly</option>
+                          </select>
+                          {editTaskData?.recurrence !== 'none' && (
+                            <input 
+                              type="date" 
+                              value={editTaskData.recurrenceEndDate || ''}
+                              onChange={e => setEditTaskData({...editTaskData, recurrenceEndDate: e.target.value})}
+                              className="w-full p-3 bg-white border border-stone-200 rounded-xl outline-none text-xs font-bold"
+                            />
+                          )}
+                        </div>
                       ) : (
-                        <div className="flex items-center gap-2 text-stone-900 text-sm font-bold capitalize">
-                          <RotateCcw className="w-4 h-4 text-stone-400" />
-                          {selectedTask.recurrence || 'One-time'}
+                        <div className="flex flex-col gap-1">
+                          <div className="flex items-center gap-2 text-stone-900 text-sm font-bold capitalize">
+                            <RotateCcw className="w-4 h-4 text-stone-400" />
+                            {selectedTask.recurrence || 'One-time'}
+                          </div>
+                          {selectedTask.recurrence !== 'none' && selectedTask.recurrenceEndDate && (
+                            <span className="text-[10px] text-stone-400 font-bold ml-6">Until {format(new Date(selectedTask.recurrenceEndDate), 'MMM dd, yyyy')}</span>
+                          )}
                         </div>
                       )}
+                    </div>
+
+                    <div className="space-y-4 pt-4 border-t border-stone-100">
+                      <div className="flex items-center justify-between">
+                        <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest ml-1">Attachments</label>
+                        {!isEditingTask && (
+                          <label className="cursor-pointer p-1.5 hover:bg-stone-100 rounded-lg text-stone-400 hover:text-stone-900 transition-all">
+                            <Paperclip className="w-4 h-4" />
+                            <input type="file" className="hidden" onChange={handleFileUpload} />
+                          </label>
+                        )}
+                      </div>
+                      <div className="space-y-2">
+                        {(!selectedTask.attachments || selectedTask.attachments.length === 0) && (
+                          <div className="text-[10px] text-stone-300 font-bold italic ml-1">No files attached.</div>
+                        )}
+                        {(selectedTask.attachments || []).map((file: any) => (
+                          <div key={file.id} className="flex items-center gap-3 p-3 bg-white border border-stone-100 rounded-xl group/file shadow-sm">
+                            <div className="w-8 h-8 bg-stone-50 rounded-lg flex items-center justify-center">
+                              <FileText className="w-4 h-4 text-stone-400" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-[10px] font-bold text-stone-900 truncate">{file.name}</p>
+                              <p className="text-[8px] font-bold text-stone-400 uppercase">{file.size} • {file.type.split('/')[1] || 'FILE'}</p>
+                            </div>
+                            <button className="p-1.5 hover:bg-stone-50 text-stone-300 hover:text-stone-900 rounded-lg transition-all">
+                              <Download className="w-3.5 h-3.5" />
+                            </button>
+                            {!isEditingTask && (
+                              <button 
+                                onClick={() => removeAttachment(file.id)}
+                                className="p-1.5 hover:bg-red-50 text-stone-300 hover:text-red-500 rounded-lg transition-all opacity-0 group-hover/file:opacity-100"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   </div>
                 </div>
