@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../lib/firebase';
-import { collection, query, where, onSnapshot, addDoc, updateDoc, doc, deleteDoc, orderBy } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, addDoc, updateDoc, doc, deleteDoc, orderBy, getDocs } from 'firebase/firestore';
 import { Plus, MoreVertical, Clock, AlertCircle, CheckCircle2, Trash2, Calendar, X, Save, ArrowUpDown, Filter, Check, RotateCcw, Users, Paperclip, FileText, Download, GitBranch } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { format } from 'date-fns';
@@ -44,6 +44,7 @@ export default function ActionBoard({ user, business }: { user: any, business: a
   const [newComment, setNewComment] = useState('');
   const [subtasks, setSubtasks] = useState<any[]>([]);
   const [newSubtaskTitle, setNewSubtaskTitle] = useState('');
+  const [editingSubtask, setEditingSubtask] = useState<string | null>(null);
 
   useEffect(() => {
     if (!business) return;
@@ -84,8 +85,8 @@ export default function ActionBoard({ user, business }: { user: any, business: a
     if (task?.parentId && (status === 'in-progress' || status === 'done')) {
       const parent = items.find(i => i.id === task.parentId);
       if (parent && parent.status !== 'done') {
-        alert(`Dependency Error: "${parent.title}" must be "Done" first.`);
-        return;
+        alert(`Dependency Alert: "${parent.title}" must be completed before you can start or finish this task.`);
+        return false;
       }
     }
 
@@ -103,16 +104,38 @@ export default function ActionBoard({ user, business }: { user: any, business: a
 
       const recurrenceEndDate = task.recurrenceEndDate ? new Date(task.recurrenceEndDate) : null;
       if (!recurrenceEndDate || nextDate <= recurrenceEndDate) {
-        await addDoc(collection(db, 'actionItems'), {
-          ...task,
-          id: undefined,
-          status: 'todo',
-          dueDate: nextDate.toISOString().split('T')[0],
-          createdAt: new Date().toISOString(),
-          updatedAt: null
-        });
+        // Only create if next instance doesn't seem to exist (simple check by title and date)
+        const nextDateStr = nextDate.toISOString().split('T')[0];
+        const existingNext = items.find(i => i.title === task.title && i.dueDate === nextDateStr && i.status !== 'done');
+        
+        if (!existingNext) {
+          const newDoc = await addDoc(collection(db, 'actionItems'), {
+            ...task,
+            id: undefined,
+            status: 'todo',
+            dueDate: nextDateStr,
+            subtasksDone: 0,
+            createdAt: new Date().toISOString(),
+            updatedAt: null
+          });
+
+          // Clone Subtasks
+          const qSub = query(collection(db, 'actionItems', task.id, 'subtasks'));
+          const subSnap = await getDocs(qSub);
+          subSnap.docs.forEach(async (subDoc) => {
+            const sd = subDoc.data();
+            await addDoc(collection(db, 'actionItems', newDoc.id, 'subtasks'), {
+              title: sd.title,
+              done: false,
+              dueDate: sd.dueDate || '',
+              attachments: sd.attachments || [],
+              createdAt: new Date().toISOString()
+            });
+          });
+        }
       }
     }
+    return true;
   };
 
   const addComment = async () => {
@@ -131,14 +154,130 @@ export default function ActionBoard({ user, business }: { user: any, business: a
     await addDoc(collection(db, 'actionItems', selectedTask.id, 'subtasks'), {
       title: newSubtaskTitle,
       done: false,
+      dueDate: '',
+      parentId: '',
+      attachments: [],
       createdAt: new Date().toISOString()
     });
+    
+    // Update denormalized counts
+    const taskRef = doc(db, 'actionItems', selectedTask.id);
+    await updateDoc(taskRef, {
+      subtasksTotal: (selectedTask.subtasksTotal || 0) + 1
+    });
+    setSelectedTask({ ...selectedTask, subtasksTotal: (selectedTask.subtasksTotal || 0) + 1 });
+    
     setNewSubtaskTitle('');
   };
 
   const toggleSubtask = async (subtaskId: string, currentStatus: boolean) => {
+    const subtask = subtasks.find(s => s.id === subtaskId);
+    
+    // Dependency Check
+    if (!currentStatus && subtask?.parentId) {
+      const parentSub = subtasks.find(s => s.id === subtask.parentId);
+      if (parentSub && !parentSub.done) {
+        alert(`Blocked: Please complete "${parentSub.title}" first.`);
+        return;
+      }
+    }
+
     await updateDoc(doc(db, 'actionItems', selectedTask.id, 'subtasks', subtaskId), {
       done: !currentStatus
+    });
+
+    // Update denormalized counts
+    const taskRef = doc(db, 'actionItems', selectedTask.id);
+    const newDone = currentStatus ? (selectedTask.subtasksDone || 0) - 1 : (selectedTask.subtasksDone || 0) + 1;
+    await updateDoc(taskRef, {
+      subtasksDone: Math.max(0, newDone)
+    });
+    setSelectedTask({ ...selectedTask, subtasksDone: Math.max(0, newDone) });
+  };
+
+  const deleteSubtask = async (subtaskId: string, wasDone: boolean) => {
+    await deleteDoc(doc(db, 'actionItems', selectedTask.id, 'subtasks', subtaskId));
+    
+    // Update denormalized counts
+    const taskRef = doc(db, 'actionItems', selectedTask.id);
+    await updateDoc(taskRef, {
+      subtasksTotal: Math.max(0, (selectedTask.subtasksTotal || 0) - 1),
+      subtasksDone: Math.max(0, wasDone ? (selectedTask.subtasksDone || 0) - 1 : (selectedTask.subtasksDone || 0))
+    });
+    setSelectedTask({ 
+      ...selectedTask, 
+      subtasksTotal: Math.max(0, (selectedTask.subtasksTotal || 0) - 1),
+      subtasksDone: Math.max(0, wasDone ? (selectedTask.subtasksDone || 0) - 1 : (selectedTask.subtasksDone || 0))
+    });
+  };
+
+  const deleteTask = async (taskId: string) => {
+    if (!confirm('Are you sure you want to delete this task? All sub-tasks and comments will also be removed.')) return;
+    
+    // 1. Delete comments sub-collection
+    const qComments = query(collection(db, 'actionItems', taskId, 'comments'));
+    const commentsSnap = await getDocs(qComments);
+    const commentDeletes = commentsSnap.docs.map(d => deleteDoc(d.ref));
+    
+    // 2. Delete subtasks sub-collection
+    const qSubtasks = query(collection(db, 'actionItems', taskId, 'subtasks'));
+    const subtasksSnap = await getDocs(qSubtasks);
+    const subtaskDeletes = subtasksSnap.docs.map(d => deleteDoc(d.ref));
+    
+    await Promise.all([...commentDeletes, ...subtaskDeletes]);
+    
+    // 3. Delete parent task
+    await deleteDoc(doc(db, 'actionItems', taskId));
+    
+    if (selectedTask?.id === taskId) {
+      setSelectedTask(null);
+    }
+    
+    // Remove from selectedIds if present
+    const newSelected = new Set(selectedIds);
+    newSelected.delete(taskId);
+    setSelectedIds(newSelected);
+  };
+
+  const handleSubtaskFileUpload = async (subtaskId: string) => {
+    if (!selectedTask) return;
+    
+    const url = prompt("Please enter the file URL for this sub-task:");
+    if (!url) return;
+    
+    const name = prompt("Enter a name for this sub-task attachment:", "Sub-task resource");
+    if (!name) return;
+
+    const newAttachment = {
+      id: Math.random().toString(36).substring(7),
+      name,
+      url,
+      type: 'link',
+      size: 'Remote',
+      createdAt: new Date().toISOString()
+    };
+
+    const subtask = subtasks.find(s => s.id === subtaskId);
+    const updatedAttachments = [...(subtask?.attachments || []), newAttachment];
+    
+    await updateDoc(doc(db, 'actionItems', selectedTask.id, 'subtasks', subtaskId), { 
+      attachments: updatedAttachments 
+    });
+  };
+
+  const removeSubtaskAttachment = async (subtaskId: string, attachmentId: string) => {
+    if (!selectedTask) return;
+    const subtask = subtasks.find(s => s.id === subtaskId);
+    const updatedAttachments = (subtask?.attachments || []).filter((a: any) => a.id !== attachmentId);
+    
+    await updateDoc(doc(db, 'actionItems', selectedTask.id, 'subtasks', subtaskId), { 
+      attachments: updatedAttachments 
+    });
+  };
+
+  const updateSubtaskField = async (subtaskId: string, field: string, value: any) => {
+    await updateDoc(doc(db, 'actionItems', selectedTask.id, 'subtasks', subtaskId), {
+      [field]: value
     });
   };
 
@@ -165,19 +304,22 @@ export default function ActionBoard({ user, business }: { user: any, business: a
     setIsAdding(false);
   };
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !selectedTask) return;
+  const handleFileUpload = async () => {
+    if (!selectedTask) return;
+    
+    const url = prompt("Please enter the file URL (e.g., a link from Google Drive or Dropbox):");
+    if (!url) return;
+    
+    const name = prompt("Enter a name for this attachment:", "Resource link");
+    if (!name) return;
 
-    // Simulate file upload metadata storage
     const newAttachment = {
-      id: Math.random().toString(36).substr(2, 9),
-      name: file.name,
-      size: (file.size / 1024).toFixed(1) + ' KB',
-      type: file.type,
-      createdAt: new Date().toISOString(),
-      // In a real app, this would be a Storage URL
-      url: '#' 
+      id: Math.random().toString(36).substring(7),
+      name,
+      url,
+      type: 'link',
+      size: 'Remote',
+      createdAt: new Date().toISOString()
     };
 
     const taskRef = doc(db, 'actionItems', selectedTask.id);
@@ -265,10 +407,10 @@ export default function ActionBoard({ user, business }: { user: any, business: a
   };
 
   const handleBulkDelete = async () => {
-    if (!confirm(`Are you sure you want to delete ${selectedIds.size} tasks?`)) return;
+    if (!confirm(`Are you sure you want to delete ${selectedIds.size} tasks? This will remove all their sub-tasks and comments.`)) return;
     setIsBulkProcessing(true);
     try {
-      const promises = Array.from(selectedIds).map(id => deleteDoc(doc(db, 'actionItems', id)));
+      const promises = Array.from(selectedIds).map(id => deleteTask(id));
       await Promise.all(promises);
       setSelectedIds(new Set());
     } finally {
@@ -470,7 +612,7 @@ export default function ActionBoard({ user, business }: { user: any, business: a
                             <CheckCircle2 className="w-3 h-3 text-emerald-500" />
                           </motion.button>
                         )}
-                        <button onClick={() => deleteDoc(doc(db, 'actionItems', item.id))} className="p-1 hover:bg-red-50 rounded shadow-sm transition-colors"><Trash2 className="w-3 h-3 text-red-400" /></button>
+                        <button onClick={(e) => { e.stopPropagation(); deleteTask(item.id); }} className="p-1 hover:bg-red-50 rounded shadow-sm transition-colors"><Trash2 className="w-3 h-3 text-red-400" /></button>
                       </div>
                     </div>
                     <h4 className="text-sm font-bold text-stone-900 mb-1 flex items-center gap-2">
@@ -489,7 +631,25 @@ export default function ActionBoard({ user, business }: { user: any, business: a
                         </div>
                       )}
                     </h4>
-                    <p className="text-xs text-stone-500 line-clamp-2 mb-4 font-medium leading-relaxed">{item.description}</p>
+                    <p className="text-xs text-stone-500 line-clamp-2 mb-2 font-medium leading-relaxed">{item.description}</p>
+                    
+                    {/* Subtask Progress */}
+                    {items.filter(i => i.parentId === item.id).length > 0 || (item.subtaskCount > 0) ? (
+                      <div className="mb-4">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-[8px] font-black text-stone-400 uppercase tracking-widest">Sub-tasks</span>
+                          <span className="text-[8px] font-black text-stone-600">
+                            {item.subtasksDone || 0}/{item.subtasksTotal || 0}
+                          </span>
+                        </div>
+                        <div className="w-full h-1 bg-stone-200/50 rounded-full overflow-hidden">
+                          <div 
+                            className="h-full bg-emerald-500 transition-all duration-500" 
+                            style={{ width: `${item.subtasksTotal ? (item.subtasksDone / item.subtasksTotal * 100) : 0}%` }}
+                          />
+                        </div>
+                      </div>
+                    ) : null}
                     
                     <div className="flex items-center justify-between mt-auto">
                       {item.assignedTo ? (
@@ -695,20 +855,6 @@ export default function ActionBoard({ user, business }: { user: any, business: a
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest ml-1">Assigned To</label>
-                  <select 
-                    value={newItem.assignedTo}
-                    onChange={e => setNewItem({...newItem, assignedTo: e.target.value})}
-                    className="w-full p-4 bg-stone-50 border border-stone-100 rounded-2xl outline-none focus:ring-2 focus:ring-stone-200 transition-all text-sm font-bold"
-                  >
-                    <option value="">Unassigned</option>
-                    {staff.map(s => (
-                      <option key={s.id} value={s.id}>{s.name || s.email}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="space-y-2">
                   <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest ml-1">Recurrence</label>
                   <select 
                     value={newItem.recurrence}
@@ -722,7 +868,7 @@ export default function ActionBoard({ user, business }: { user: any, business: a
                   </select>
                 </div>
 
-                {newItem.recurrence !== 'none' && (
+                {newItem.recurrence !== 'none' ? (
                   <div className="space-y-2">
                     <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest ml-1">End Recurrence</label>
                     <input 
@@ -732,6 +878,8 @@ export default function ActionBoard({ user, business }: { user: any, business: a
                       className="w-full p-4 bg-stone-50 border border-stone-100 rounded-2xl outline-none focus:ring-2 focus:ring-stone-200 transition-all text-sm font-bold"
                     />
                   </div>
+                ) : (
+                  <div />
                 )}
               </div>
 
@@ -1008,10 +1156,12 @@ export default function ActionBoard({ user, business }: { user: any, business: a
                       <div className="flex items-center justify-between">
                         <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest ml-1">Attachments</label>
                         {!isEditingTask && (
-                          <label className="cursor-pointer p-1.5 hover:bg-stone-100 rounded-lg text-stone-400 hover:text-stone-900 transition-all">
+                          <button 
+                            onClick={handleFileUpload}
+                            className="p-1.5 hover:bg-stone-100 rounded-lg text-stone-400 hover:text-stone-900 transition-all"
+                          >
                             <Paperclip className="w-4 h-4" />
-                            <input type="file" className="hidden" onChange={handleFileUpload} />
-                          </label>
+                          </button>
                         )}
                       </div>
                       <div className="space-y-2">
@@ -1063,27 +1213,124 @@ export default function ActionBoard({ user, business }: { user: any, business: a
                         {subtasks.filter(s => s.done).length}/{subtasks.length} Completed
                       </span>
                     </div>
-                    <div className="space-y-3">
+                    <div className="space-y-4">
                       {subtasks.map(st => (
-                        <div key={st.id} className="flex items-center gap-3 p-4 bg-stone-50 rounded-2xl border border-stone-100 group/sub">
-                          <button 
-                            onClick={() => toggleSubtask(st.id, st.done)}
-                            className={cn(
-                              "w-5 h-5 rounded-md border flex items-center justify-center transition-colors",
-                              st.done ? "bg-emerald-500 border-emerald-500 text-white" : "border-stone-200 bg-white"
+                        <div key={st.id} className="bg-stone-50 rounded-2xl border border-stone-100 overflow-hidden group/sub">
+                          <div className="flex items-center gap-3 p-4">
+                            <button 
+                              onClick={() => toggleSubtask(st.id, st.done)}
+                              disabled={!st.done && st.parentId && !subtasks.find(s => s.id === st.parentId)?.done}
+                              className={cn(
+                                "w-5 h-5 rounded-md border flex items-center justify-center transition-colors shadow-sm",
+                                st.done ? "bg-emerald-500 border-emerald-500 text-white" : "border-stone-200 bg-white",
+                                !st.done && st.parentId && !subtasks.find(s => s.id === st.parentId)?.done && "opacity-50 cursor-not-allowed bg-stone-100"
+                              )}
+                              title={!st.done && st.parentId && !subtasks.find(s => s.id === st.parentId)?.done ? `Blocked by "${subtasks.find(s => s.id === st.parentId)?.title}"` : ""}
+                            >
+                              {st.done ? <Check className="w-3 h-3" /> : (st.parentId && !subtasks.find(s => s.id === st.parentId)?.done && <AlertCircle className="w-2.5 h-2.5 text-amber-500" />)}
+                            </button>
+                            <div className="flex-1 min-w-0" onClick={() => setEditingSubtask(editingSubtask === st.id ? null : st.id)}>
+                              <div className="flex items-center gap-2">
+                                <span className={cn("text-xs font-bold truncate", st.done ? "text-stone-400 line-through" : "text-stone-700")}>
+                                  {st.title}
+                                </span>
+                                {st.dueDate && (
+                                  <span className={cn(
+                                    "text-[8px] font-black uppercase px-1.5 py-0.5 rounded",
+                                    new Date(st.dueDate) < new Date() && !st.done ? "bg-red-100 text-red-600" : "bg-stone-200 text-stone-500"
+                                  )}>
+                                    {format(new Date(st.dueDate), 'MMM dd')}
+                                  </span>
+                                )}
+                                {st.parentId && (
+                                  <GitBranch className={cn("w-3 h-3", subtasks.find(s => s.id === st.parentId)?.done ? "text-emerald-500" : "text-amber-500")} />
+                                )}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1 opacity-0 group-hover/sub:opacity-100 transition-all">
+                              <button 
+                                onClick={() => setEditingSubtask(editingSubtask === st.id ? null : st.id)}
+                                className="p-1.5 hover:bg-stone-200 text-stone-400 rounded-lg transition-all"
+                              >
+                                <MoreVertical className="w-3.5 h-3.5" />
+                              </button>
+                              <button 
+                                onClick={() => deleteSubtask(st.id, st.done)}
+                                className="p-1.5 hover:bg-red-50 text-red-400 rounded-lg transition-all"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+
+                          <AnimatePresence>
+                            {editingSubtask === st.id && (
+                              <motion.div 
+                                initial={{ height: 0 }}
+                                animate={{ height: 'auto' }}
+                                exit={{ height: 0 }}
+                                className="border-t border-stone-200/50 bg-white/50 overflow-hidden"
+                              >
+                                <div className="p-4 space-y-4">
+                                  <div className="grid grid-cols-2 gap-4">
+                                    <div className="space-y-1">
+                                      <label className="text-[9px] font-black text-stone-400 uppercase tracking-widest ml-1">Due Date</label>
+                                      <input 
+                                        type="date" 
+                                        value={st.dueDate || ''}
+                                        onChange={(e) => updateSubtaskField(st.id, 'dueDate', e.target.value)}
+                                        className="w-full p-2 bg-stone-50 border border-stone-100 rounded-lg text-[10px] font-bold outline-none focus:ring-1 focus:ring-stone-200"
+                                      />
+                                    </div>
+                                    <div className="space-y-1">
+                                      <label className="text-[9px] font-black text-stone-400 uppercase tracking-widest ml-1">Depends On</label>
+                                      <select 
+                                        value={st.parentId || ''}
+                                        onChange={(e) => updateSubtaskField(st.id, 'parentId', e.target.value)}
+                                        className="w-full p-2 bg-stone-50 border border-stone-100 rounded-lg text-[10px] font-bold outline-none focus:ring-1 focus:ring-stone-200"
+                                      >
+                                        <option value="">No Dependency</option>
+                                        {subtasks.filter(s => s.id !== st.id).map(s => (
+                                          <option key={s.id} value={s.id}>{s.title}</option>
+                                        ))}
+                                      </select>
+                                    </div>
+                                  </div>
+
+                                  <div className="space-y-2">
+                                    <div className="flex items-center justify-between">
+                                      <label className="text-[9px] font-black text-stone-400 uppercase tracking-widest ml-1">Attachments</label>
+                                      <button 
+                                        onClick={() => handleSubtaskFileUpload(st.id)}
+                                        className="text-[9px] font-black text-blue-500 hover:text-blue-700 uppercase tracking-widest"
+                                      >
+                                        Add File
+                                      </button>
+                                    </div>
+                                    <div className="flex flex-wrap gap-2">
+                                      {(st.attachments || []).map((file: any) => (
+                                        <div key={file.id} className="flex items-center gap-2 p-1.5 bg-stone-100 rounded-lg group/subfile">
+                                          <FileText className="w-3 h-3 text-stone-400" />
+                                          <a href={file.url} target="_blank" rel="noreferrer" className="text-[9px] font-bold text-stone-600 hover:underline truncate max-w-[100px]">
+                                            {file.name}
+                                          </a>
+                                          <button 
+                                            onClick={() => removeSubtaskAttachment(st.id, file.id)}
+                                            className="p-1 hover:bg-stone-200 text-stone-400 rounded-md transition-all"
+                                          >
+                                            <X className="w-2.5 h-2.5" />
+                                          </button>
+                                        </div>
+                                      ))}
+                                      {(!st.attachments || st.attachments.length === 0) && (
+                                        <span className="text-[9px] text-stone-300 italic">No attachments</span>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              </motion.div>
                             )}
-                          >
-                            {st.done && <Check className="w-3 h-3" />}
-                          </button>
-                          <span className={cn("text-xs font-bold", st.done ? "text-stone-400 line-through" : "text-stone-700")}>
-                            {st.title}
-                          </span>
-                          <button 
-                            onClick={() => deleteDoc(doc(db, 'actionItems', selectedTask.id, 'subtasks', st.id))}
-                            className="ml-auto opacity-0 group-hover/sub:opacity-100 p-1 hover:bg-red-50 text-red-400 rounded-lg transition-all"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                          </AnimatePresence>
                         </div>
                       ))}
                       <div className="flex gap-2">
@@ -1151,24 +1398,40 @@ export default function ActionBoard({ user, business }: { user: any, business: a
                 <div className="mt-12 pt-8 border-t border-stone-100 flex flex-wrap gap-4">
                   {selectedTask.status === 'todo' && (
                     <button 
-                      onClick={() => {
-                        updateStatus(selectedTask.id, 'in-progress');
-                        setSelectedTask({...selectedTask, status: 'in-progress'});
+                      onClick={async () => {
+                        const success = await updateStatus(selectedTask.id, 'in-progress');
+                        if (success) setSelectedTask({...selectedTask, status: 'in-progress'});
                       }}
-                      className="flex-1 min-w-[200px] py-4 bg-white border border-stone-200 text-stone-900 rounded-2xl font-black text-sm flex items-center justify-center gap-3 hover:bg-stone-50 hover:border-stone-400 transition-all shadow-sm active:scale-95"
+                      className={cn(
+                        "flex-1 min-w-[200px] py-4 rounded-2xl font-black text-sm flex items-center justify-center gap-3 transition-all shadow-sm active:scale-95",
+                        selectedTask.parentId && items.find(i => i.id === selectedTask.parentId)?.status !== 'done'
+                          ? "bg-stone-50 text-stone-300 border border-stone-100 cursor-not-allowed"
+                          : "bg-white border border-stone-200 text-stone-900 hover:bg-stone-50 hover:border-stone-400"
+                      )}
+                      title={selectedTask.parentId && items.find(i => i.id === selectedTask.parentId)?.status !== 'done' ? "Blocked by parent task" : ""}
                     >
-                      <Clock className="w-5 h-5 text-blue-500" /> Start Processing
+                      <Clock className={cn("w-5 h-5", selectedTask.parentId && items.find(i => i.id === selectedTask.parentId)?.status !== 'done' ? "text-stone-200" : "text-blue-500")} /> 
+                      {selectedTask.parentId && items.find(i => i.id === selectedTask.parentId)?.status !== 'done' ? "Blocked by Parent" : "Start Processing"}
                     </button>
                   )}
                   {selectedTask.status !== 'done' && (
                     <button 
-                      onClick={() => {
-                        updateStatus(selectedTask.id, 'done');
-                        setSelectedTask({...selectedTask, status: 'done'});
+                      onClick={async () => {
+                        const success = await updateStatus(selectedTask.id, 'done');
+                        if (success) {
+                          setSelectedTask({...selectedTask, status: 'done'});
+                        }
                       }}
-                      className="flex-1 min-w-[200px] py-4 bg-stone-900 text-white rounded-2xl font-black text-sm flex items-center justify-center gap-3 hover:bg-stone-800 transition-all shadow-xl shadow-stone-900/20 active:scale-95"
+                      className={cn(
+                        "flex-1 min-w-[200px] py-4 rounded-2xl font-black text-sm flex items-center justify-center gap-3 transition-all shadow-xl active:scale-95",
+                        selectedTask.parentId && items.find(i => i.id === selectedTask.parentId)?.status !== 'done'
+                          ? "bg-stone-800 text-stone-500 cursor-not-allowed"
+                          : "bg-stone-900 text-white hover:bg-stone-800 shadow-stone-900/20"
+                      )}
+                      title={selectedTask.parentId && items.find(i => i.id === selectedTask.parentId)?.status !== 'done' ? "Blocked by parent task" : ""}
                     >
-                      <CheckCircle2 className="w-5 h-5 text-emerald-400" /> Mark Completed
+                      <CheckCircle2 className={cn("w-5 h-5", selectedTask.parentId && items.find(i => i.id === selectedTask.parentId)?.status !== 'done' ? "text-stone-600" : "text-emerald-400")} />
+                      {selectedTask.parentId && items.find(i => i.id === selectedTask.parentId)?.status !== 'done' ? "Blocked by Parent" : "Mark Completed"}
                     </button>
                   )}
                   {selectedTask.status === 'done' && (

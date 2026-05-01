@@ -291,9 +291,35 @@ export default function Storefront({ businessId }: { businessId: string }) {
       }
 
       const finalDoc = await getDoc(doc(db, 'orders', pendingOrderId));
+      const order = { id: finalDoc.id, ...finalDoc.data() } as any;
+
+      // Update Stock for each item
+      for (const item of order.items) {
+        const productRef = doc(db, 'products', item.id);
+        const productSnap = await getDoc(productRef);
+        if (productSnap.exists()) {
+          const product = productSnap.data();
+          const newStock = Math.max(0, (product.stock || 0) - item.quantity);
+          await updateDoc(productRef, { 
+            stock: newStock,
+            updatedAt: new Date().toISOString()
+          });
+
+          // Low stock notification check
+          if (newStock <= (product.threshold || 5)) {
+            await createNotification({
+              businessId,
+              type: 'stock',
+              title: 'Low Stock Alert',
+              message: `${product.name} is running low (${newStock} left)`,
+              link: 'inventory'
+            }, business?.ownerUid);
+          }
+        }
+      }
       
       setClientSecret('');
-      setOrderComplete({ id: finalDoc.id, ...finalDoc.data() });
+      setOrderComplete(order);
       setCart([]);
       setShowCart(false);
       setCheckoutStep('cart');
