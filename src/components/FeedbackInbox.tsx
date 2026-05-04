@@ -35,6 +35,9 @@ export default function FeedbackInbox({ user, business, onViewOrder, initialSurv
   const [datePreset, setDatePreset] = useState<'all' | '7d' | '30d' | 'custom'>('all');
   const [actionItemFilter, setActionItemFilter] = useState<'all' | 'with-actions' | 'without-actions'>('all');
   const [actionItems, setActionItems] = useState<any[]>([]);
+  const [surveys, setSurveys] = useState<any[]>([]);
+  const [aiFocus, setAiFocus] = useState('');
+  const [aiLength, setAiLength] = useState<'short' | 'medium' | 'detailed'>('medium');
 
   useEffect(() => {
     if (!business) return;
@@ -48,9 +51,15 @@ export default function FeedbackInbox({ user, business, onViewOrder, initialSurv
       setActionItems(s.docs.map(d => ({ id: d.id, ...d.data() })));
     });
 
+    const sQuery = query(collection(db, 'surveys'), where('businessId', '==', business.id));
+    const sUnsubscribe = onSnapshot(sQuery, (s) => {
+      setSurveys(s.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
+
     return () => {
       unsubscribe();
       aiUnsubscribe();
+      sUnsubscribe();
     };
   }, [business]);
 
@@ -159,18 +168,22 @@ export default function FeedbackInbox({ user, business, onViewOrder, initialSurv
     setIsAnalyzing(true);
     try {
       const ai = getGenAI();
+      const lengthPrompt = aiLength === 'short' ? 'Keep the summary very concise (max 100 words).' : aiLength === 'detailed' ? 'Provide a detailed and comprehensive analysis.' : 'Keep the summary of medium length.';
+      const focusPrompt = aiFocus ? `STRICTLY focus your analysis on: "${aiFocus}".` : 'Specifically focus on extracting actionable insights such as suggestions for product improvement or service enhancements.';
+      
       const prompt = `You are a customer experience expert. Analyze the following survey responses for a business named "${business?.name}".
-      Specifically focus on extracting actionable insights such as suggestions for product improvement or service enhancements.
+      ${lengthPrompt}
+      ${focusPrompt}
       Identify and list common themes or topics across multiple feedback responses.
-      Keep the summary concise, professional, and actionable. Format it as a short paragraph followed by a bulleted list of key themes mentioned by customers, and then a bulleted list of actionable insights.
+      Format it as a short paragraph followed by a bulleted list of key themes mentioned by customers, and then a bulleted list of actionable insights.
       
       Responses:
       ${JSON.stringify(responses.map(r => ({ sentiment: r.sentiment, score: r.score, answers: r.answers })))}
       `;
       
       const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: prompt,
+        model: "gemini-2.0-flash",
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
       });
 
       if (response.text) {
@@ -269,6 +282,20 @@ export default function FeedbackInbox({ user, business, onViewOrder, initialSurv
               animate={{ height: 'auto', opacity: 1 }}
               className="space-y-4 pt-2 border-t border-stone-100 px-1"
             >
+              <div className="space-y-2">
+                <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Survey Filter</label>
+                <select
+                  value={surveyFilter}
+                  onChange={(e) => setSurveyFilter(e.target.value)}
+                  className="w-full bg-white border border-stone-200 rounded-lg py-1.5 px-2 text-xs font-bold text-stone-600 outline-none focus:border-stone-400"
+                >
+                  <option value="all">All Surveys</option>
+                  {surveys.map(s => (
+                    <option key={s.id} value={s.id}>{s.title}</option>
+                  ))}
+                </select>
+              </div>
+
               <div className="space-y-2">
                 <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Date Range</label>
                 <div className="grid grid-cols-2 gap-2">
@@ -581,26 +608,60 @@ export default function FeedbackInbox({ user, business, onViewOrder, initialSurv
                 <MessageSquare className="w-12 h-12 mb-4 opacity-20" />
                 <p className="mb-8">Select a response to view details</p>
                 
-                <div className="w-full max-w-md bg-stone-50 rounded-3xl p-6 border border-stone-100 flex flex-col items-center text-center">
-                  <h3 className="text-sm font-bold text-stone-900 mb-2">Overall Sentiment</h3>
-                  <div className="flex items-end gap-2 mb-4">
-                    <span className="text-4xl font-black text-stone-900">
-                      {filteredResponses.filter(r => typeof r.score === 'number').length 
-                        ? (filteredResponses.filter(r => typeof r.score === 'number').reduce((a, b) => a + b.score, 0) / filteredResponses.filter(r => typeof r.score === 'number').length).toFixed(1)
-                        : "N/A"}
-                    </span>
-                    {filteredResponses.filter(r => typeof r.score === 'number').length > 0 && <span className="text-stone-400 font-bold mb-1">/ 5.0</span>}
+                <div className="w-full max-w-md bg-stone-50 rounded-3xl p-8 border border-stone-100 flex flex-col items-center text-center space-y-6">
+                  <div>
+                    <h3 className="text-sm font-bold text-stone-900 mb-2">Overall Sentiment</h3>
+                    <div className="flex items-end justify-center gap-2 mb-1">
+                      <span className="text-4xl font-black text-stone-900">
+                        {filteredResponses.filter(r => typeof r.score === 'number').length 
+                          ? (filteredResponses.filter(r => typeof r.score === 'number').reduce((a, b) => a + b.score, 0) / filteredResponses.filter(r => typeof r.score === 'number').length).toFixed(1)
+                          : "N/A"}
+                      </span>
+                      {filteredResponses.filter(r => typeof r.score === 'number').length > 0 && <span className="text-stone-400 font-bold mb-1">/ 5.0</span>}
+                    </div>
+                    <p className="text-[10px] text-stone-500 font-medium">Based on {filteredResponses.length} filtered responses</p>
                   </div>
-                  <p className="text-xs text-stone-500 mb-6 font-medium">Based on {filteredResponses.length} filtered responses</p>
                   
-                  <button 
-                    onClick={generateAIAssessment}
-                    disabled={isAnalyzing || responses.length === 0 || business?.plan === 'free'}
-                    className="w-full py-3 bg-amber-50 text-amber-600 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-amber-100 transition-colors disabled:opacity-50"
-                  >
-                    {isAnalyzing ? <div className="w-4 h-4 border-2 border-amber-600/20 border-t-amber-600 rounded-full animate-spin" /> : <Sparkles className="w-4 h-4" />}
-                    Generate AI Summary
-                  </button>
+                  <div className="w-full space-y-4 pt-6 border-t border-stone-100">
+                    <div className="text-left space-y-4">
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Analysis Focus</label>
+                        <input 
+                          type="text" 
+                          placeholder="e.g. Focus on pricing feedback, product quality..."
+                          value={aiFocus}
+                          onChange={e => setAiFocus(e.target.value)}
+                          className="w-full bg-white border border-stone-200 rounded-xl px-3 py-2 text-xs outline-none focus:border-stone-400 transition-colors"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Summary Length</label>
+                        <div className="flex gap-2">
+                          {['short', 'medium', 'detailed'].map((l: any) => (
+                            <button
+                              key={l}
+                              onClick={() => setAiLength(l)}
+                              className={cn(
+                                "flex-1 py-1.5 rounded-lg text-[10px] font-bold border transition-all capitalize",
+                                aiLength === l ? "bg-stone-900 border-stone-900 text-white" : "bg-white border-stone-200 text-stone-500 hover:border-stone-400"
+                              )}
+                            >
+                              {l}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    <button 
+                      onClick={generateAIAssessment}
+                      disabled={isAnalyzing || responses.length === 0 || business?.plan === 'free'}
+                      className="w-full py-4 bg-amber-50 text-amber-600 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-amber-100 transition-colors disabled:opacity-50"
+                    >
+                      {isAnalyzing ? <div className="w-4 h-4 border-2 border-amber-600/20 border-t-amber-600 rounded-full animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                      Generate Intelligence Report
+                    </button>
+                  </div>
                   {business?.plan === 'free' && <p className="text-[10px] uppercase tracking-widest text-stone-400 mt-2">Requires Pro Plan</p>}
                 </div>
               </div>

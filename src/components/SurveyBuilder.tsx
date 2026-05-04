@@ -57,6 +57,8 @@ function getGenAI() {
 export default function SurveyBuilder({ user, business, onViewResponses }: { user: any, business: any, onViewResponses?: (id: string) => void }) {
   const [surveys, setSurveys] = useState<any[]>([]);
   const [distributionLogs, setDistributionLogs] = useState<any[]>([]);
+  const [responses, setResponses] = useState<any[]>([]);
+  const [actionItems, setActionItems] = useState<any[]>([]);
   const [isCreating, setIsCreating] = useState(false);
   const [currentSurvey, setCurrentSurvey] = useState<any>(null);
   const [activeTab, setActiveTab] = useState<'build' | 'settings' | 'share'>('build');
@@ -116,9 +118,21 @@ export default function SurveyBuilder({ user, business, onViewResponses }: { use
       setDistributionLogs(s.docs.map(d => ({ id: d.id, ...d.data() })));
     });
 
+    const rQuery = query(collection(db, 'responses'), where('businessId', '==', business.id));
+    const rUnsub = onSnapshot(rQuery, (s) => {
+      setResponses(s.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
+
+    const aQuery = query(collection(db, 'actionItems'), where('businessId', '==', business.id));
+    const aUnsub = onSnapshot(aQuery, (s) => {
+      setActionItems(s.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
+
     return () => {
       unsubscribe();
       dUnsub();
+      rUnsub();
+      aUnsub();
     }
   }, [business]);
 
@@ -1692,6 +1706,16 @@ export default function SurveyBuilder({ user, business, onViewResponses }: { use
                 <div className="flex items-center gap-2 text-stone-400">
                   <Users className="w-4 h-4" />
                   <span className="text-xs font-medium">{survey.responseCount || 0} responses</span>
+                </div>
+                <div className="flex items-center gap-2 text-stone-400">
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span className="text-xs font-medium">
+                    {(() => {
+                      const surveyResponses = responses.filter(r => r.surveyId === survey.id);
+                      const surveyActionItems = actionItems.filter(ai => surveyResponses.some(r => r.id === ai.responseId));
+                      return surveyActionItems.length;
+                    })()} Action Items
+                  </span>
                 </div>
               </div>
               {survey.lastDistributed && (
