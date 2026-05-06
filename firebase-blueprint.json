@@ -162,6 +162,82 @@
         "createdAt": { "type": "string" }
       },
       "required": ["businessId", "email"]
+    },
+    "PlatformSettings": {
+      "title": "Platform Settings",
+      "description": "Global application configuration",
+      "type": "object",
+      "properties": {
+        "isPlatformSuspended": { "type": "boolean" },
+        "stripeSecretKey": { "type": "string" },
+        "sendGridApiKey": { "type": "string" },
+        "bgCheckApiKey": { "type": "string" },
+        "defaultCurrency": { "type": "string" }
+      }
+    },
+    "TaskTemplate": {
+      "title": "Task Template",
+      "description": "Reusable task templates",
+      "type": "object",
+      "properties": {
+        "businessId": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "priority": { "type": "string" },
+        "subtasks": { "type": "array" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["businessId", "name"]
+    },
+    "TaskComment": {
+      "title": "Task Comment",
+      "description": "Comment on an action item",
+      "type": "object",
+      "properties": {
+        "text": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "createdAt": { "type": "string" }
+      }
+    },
+    "Subtask": {
+      "title": "Subtask",
+      "description": "A smaller task within an action item",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "done": { "type": "boolean" },
+        "dueDate": { "type": "string" },
+        "parentId": { "type": "string" },
+        "attachments": { "type": "array" },
+        "createdAt": { "type": "string" }
+      }
+    },
+    "ActivityLog": {
+      "title": "Activity Log",
+      "description": "Log of changes to a task",
+      "type": "object",
+      "properties": {
+        "type": { "type": "string" },
+        "details": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "createdAt": { "type": "string" }
+      }
+    },
+    "TimeLog": {
+      "title": "Time Log",
+      "description": "Time spent on a task",
+      "type": "object",
+      "properties": {
+        "startTime": { "type": "string" },
+        "endTime": { "type": "string" },
+        "duration": { "type": "number" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "note": { "type": "string" },
+        "createdAt": { "type": "string" }
+      }
     }
   },
   "firestore": {
@@ -172,6 +248,13 @@
     "/surveys/{surveyId}": { "schema": "Survey", "description": "Survey definitions" },
     "/responses/{responseId}": { "schema": "Response", "description": "Survey responses" },
     "/actionItems/{itemId}": { "schema": "ActionItem", "description": "Action items for feedback loop" },
-    "/customers/{customerId}": { "schema": "Customer", "description": "Customer directory" }
+    "/actionItems/{itemId}/comments/{commentId}": { "schema": "TaskComment", "description": "Comments on a task" },
+    "/actionItems/{itemId}/subtasks/{subtaskId}": { "schema": "Subtask", "description": "Subtasks for a task" },
+    "/actionItems/{itemId}/activity/{logId}": { "schema": "ActivityLog", "description": "Activity history for a task" },
+    "/actionItems/{itemId}/timeLogs/{logId}": { "schema": "TimeLog", "description": "Time logs for a task" },
+    "/customers/{customerId}": { "schema": "Customer", "description": "Customer directory" },
+    "/platformSettings/{id}": { "schema": "PlatformSettings", "description": "Global settings" },
+    "/taskTemplates/{templateId}": { "schema": "TaskTemplate", "description": "Task templates" },
+    "/staff/{staffId}": { "schema": "object", "description": "Staff list" }
   }
 }

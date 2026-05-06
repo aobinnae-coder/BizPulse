@@ -1,161 +1,131 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /{document=**} {
-      allow read, write: if isAdmin();
-    }
     
-    // ===============================================================
-    // Assumed Data Model
-    // ===============================================================
-    // Collection: businesses
-    // Document ID: businessId
-    // Fields: name, logoUrl, brandColor, address, industry, ownerUid, createdAt
-    
-    // Collection: surveys
-    // Document ID: surveyId
-    // Fields: businessId, title, description, questions, settings, createdAt
-    
-    // Collection: responses
-    // Document ID: responseId
-    // Fields: surveyId, businessId, answers, respondent, sentiment, score, notes, status, createdAt
-    
-    // Collection: actionItems
-    // Document ID: itemId
-    // Fields: businessId, responseId, title, description, priority, status, dueDate, assignedTo, createdAt
-    
-    // Collection: customers
-    // Document ID: customerId
-    // Fields: businessId, name, email, phone, tags, notes, createdAt
-
-    // Collection: products
-    // Document ID: productId
-    // Fields: businessId, name, price, stock, status, ...
-    
-    // Collection: orders
-    // Document ID: orderId
-    // Fields: businessId, total, status, paymentStatus, ...
-
-    // Collection: notifications
-    // Document ID: notificationId
-    // Fields: businessId, type, title, message, read, createdAt
-
-    // Collection: staff
-    // Document ID: staffId
-    // Fields: businessId, email, role, createdAt
-
     // ===============================================================
     // Helper Functions
     // ===============================================================
-    function isAuthenticated() {
+    function isSignedIn() {
       return request.auth != null;
     }
 
+    function isEmailVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
     function isAdmin() {
-      return isAuthenticated() && request.auth.token.email == 'a.obinnae@skyrouteusa.com';
+      return isEmailVerified() && request.auth.token.email == 'a.obinnae@skyrouteusa.com';
     }
 
     function isOwner(userId) {
-      return isAuthenticated() && request.auth.uid == userId;
+      return isSignedIn() && request.auth.uid == userId;
     }
 
     function isBusinessOwner(businessId) {
-      return isAuthenticated() && 
-        businessId != null &&
+      return isSignedIn() && 
         exists(/databases/$(database)/documents/businesses/$(businessId)) &&
         get(/databases/$(database)/documents/businesses/$(businessId)).data.ownerUid == request.auth.uid;
     }
 
-    function isOwnerOrBusinessOwner(data, businessId) {
-      return isAuthenticated() && (
-        (data != null && data.ownerUid == request.auth.uid) || 
-        isBusinessOwner(businessId)
-      );
-    }
-
-    function isValidBusiness(data) {
-      return data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
-             data.ownerUid == request.auth.uid;
-    }
-
-    function isValidSurvey(data) {
-      return data.businessId is string && data.title is string && data.questions is list;
-    }
-
-    function isValidResponse(data) {
-      return data.surveyId is string && data.businessId is string && data.answers is map;
-    }
-
-    function isValidProduct(data) {
-      return data.businessId is string && data.name is string && data.price is number;
-    }
-
-    function isValidOrder(data) {
-      return data.businessId is string && data.total is number && data.status is string;
+    // ===============================================================
+    // Admin Access (Global)
+    // ===============================================================
+    match /{document=**} {
+      allow read, write: if isAdmin();
     }
 
     // ===============================================================
-    // Rules
+    // Collection Rules
     // ===============================================================
+
+    match /platformSettings/{id} {
+      allow read: if true; // Public for platform status
+    }
 
     match /businesses/{businessId} {
       allow read: if true; // Public for storefront
-      allow create: if isAuthenticated() && isValidBusiness(request.resource.data);
-      allow update: if isAuthenticated() && resource.data.ownerUid == request.auth.uid && isValidBusiness(request.resource.data) && request.resource.data.get('isSuspended', false) == resource.data.get('isSuspended', false);
+      allow create: if isEmailVerified() && request.resource.data.ownerUid == request.auth.uid;
+      allow update: if isEmailVerified() && resource.data.ownerUid == request.auth.uid;
     }
 
     match /products/{productId} {
-      allow read: if true; // Public for storefront
-      allow create: if isAuthenticated() && isOwnerOrBusinessOwner(request.resource.data, request.resource.data.businessId);
-      allow update, delete: if isAuthenticated() && isOwnerOrBusinessOwner(resource.data, resource.data.businessId);
+      allow read: if true;
+      allow create: if isEmailVerified() && isBusinessOwner(request.resource.data.businessId);
+      allow update, delete: if isEmailVerified() && isBusinessOwner(resource.data.businessId);
     }
 
     match /orders/{orderId} {
-      allow read: if (isAuthenticated() && isBusinessOwner(resource.data.businessId)) || 
+      allow read: if (isSignedIn() && isBusinessOwner(resource.data.businessId)) || 
                    (resource.data.customerId != null && request.auth.uid == resource.data.customerId);
-      allow create: if true;
-      allow update: if isAuthenticated() && isOwnerOrBusinessOwner(resource.data, resource.data.businessId);
-    }
-
-    match /surveys/{surveyId} {
-      allow read: if true;
-      allow create: if isAuthenticated() && isOwnerOrBusinessOwner(request.resource.data, request.resource.data.businessId);
-      allow update, delete: if isAuthenticated() && isOwnerOrBusinessOwner(resource.data, resource.data.businessId);
-    }
-
-    match /responses/{responseId} {
-      allow read: if isAuthenticated() && isBusinessOwner(resource.data.businessId);
-      allow create: if true;
-      allow update: if isAuthenticated() && isOwnerOrBusinessOwner(resource.data, resource.data.businessId);
-    }
-
-    match /actionItems/{itemId} {
-      allow read: if isAuthenticated() && isBusinessOwner(resource.data.businessId);
-      allow create: if isAuthenticated() && isOwnerOrBusinessOwner(request.resource.data, request.resource.data.businessId);
-      allow update, delete: if isAuthenticated() && isOwnerOrBusinessOwner(resource.data, resource.data.businessId);
-    }
-
-    match /customers/{customerId} {
-      allow read: if isAuthenticated() && isBusinessOwner(resource.data.businessId);
-      allow create: if isAuthenticated() && isOwnerOrBusinessOwner(request.resource.data, request.resource.data.businessId);
-      allow update, delete: if isAuthenticated() && isOwnerOrBusinessOwner(resource.data, resource.data.businessId);
+      allow create: if true; // Public checkout
+      allow update: if isEmailVerified() && isBusinessOwner(resource.data.businessId);
     }
 
     match /coupons/{couponId} {
       allow read: if true;
-      allow create: if isAuthenticated() && isOwnerOrBusinessOwner(request.resource.data, request.resource.data.businessId);
-      allow update, delete: if isAuthenticated() && isOwnerOrBusinessOwner(resource.data, resource.data.businessId);
+      allow create: if isEmailVerified() && isBusinessOwner(request.resource.data.businessId);
+      allow update, delete: if isEmailVerified() && isBusinessOwner(resource.data.businessId);
     }
 
-    match /notifications/{notificationId} {
-      allow read: if isAuthenticated() && isBusinessOwner(resource.data.businessId);
-      allow update, delete: if isAuthenticated() && isOwnerOrBusinessOwner(resource.data, resource.data.businessId);
-      allow create: if true;
+    match /surveys/{surveyId} {
+      allow read: if true;
+      allow create: if isEmailVerified() && isBusinessOwner(request.resource.data.businessId);
+      allow update, delete: if isEmailVerified() && isBusinessOwner(resource.data.businessId);
+    }
+
+    match /responses/{responseId} {
+      allow read: if isEmailVerified() && isBusinessOwner(resource.data.businessId);
+      allow create: if true; // Public submission
+      allow update: if isEmailVerified() && isBusinessOwner(resource.data.businessId);
+    }
+
+    match /actionItems/{itemId} {
+      allow read: if isEmailVerified() && (
+        isBusinessOwner(resource.data.businessId) || 
+        resource.data.assignedTo == request.auth.uid ||
+        exists(/databases/$(database)/documents/staff/$(request.auth.uid))
+      );
+      allow create: if isEmailVerified() && isBusinessOwner(request.resource.data.businessId);
+      allow update, delete: if isEmailVerified() && (
+        isBusinessOwner(resource.data.businessId) ||
+        resource.data.assignedTo == request.auth.uid
+      );
+
+      match /comments/{commentId} {
+        allow read, create: if isEmailVerified();
+      }
+      match /subtasks/{subtaskId} {
+        allow read, write: if isEmailVerified();
+      }
+      match /activity/{logId} {
+        allow read, create: if isEmailVerified();
+      }
+      match /timeLogs/{logId} {
+        allow read, write: if isEmailVerified();
+      }
+    }
+
+    match /customers/{customerId} {
+      allow read, write: if isEmailVerified() && isBusinessOwner(resource.data.businessId || request.resource.data.businessId);
+    }
+
+    match /taskTemplates/{templateId} {
+      allow read, write: if isEmailVerified() && isBusinessOwner(resource.data.businessId || request.resource.data.businessId);
     }
 
     match /staff/{staffId} {
-      allow read: if isAuthenticated() && isBusinessOwner(resource.data.businessId);
-      allow write: if isAuthenticated() && isOwnerOrBusinessOwner(request.resource.data || resource.data, request.resource.data.businessId || resource.data.businessId);
+      allow read: if isEmailVerified() && (
+        isBusinessOwner(resource.data.businessId) || 
+        request.auth.token.email == resource.data.email ||
+        // Staff can see colleagues
+        exists(/databases/$(database)/documents/businesses/$(resource.data.businessId))
+      );
+      allow write: if isEmailVerified() && isBusinessOwner(request.resource.data.businessId || resource.data.businessId);
+    }
+
+    match /notifications/{notificationId} {
+      allow read, update: if isEmailVerified() && isBusinessOwner(resource.data.businessId);
+      allow create: if true;
     }
   }
 }

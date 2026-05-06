@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { auth, db, googleProvider, signInWithPopup, signOut } from './lib/firebase';
+import { auth, db, googleProvider, signInWithPopup, signOut, handleFirestoreError, OperationType } from './lib/firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { collection, query, where, onSnapshot, doc, getDoc } from 'firebase/firestore';
 import { 
@@ -89,6 +89,8 @@ export default function App() {
       if (doc.exists()) {
         setIsPlatformSuspended(doc.data().isPlatformSuspended || false);
       }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, 'platformSettings/global');
     });
     return () => unsubscribe();
   }, []);
@@ -125,6 +127,8 @@ export default function App() {
           setBusiness(null);
         }
         setIsBusinessLoading(false);
+      }, (error) => {
+        handleFirestoreError(error, OperationType.LIST, 'businesses');
       });
       return () => unsubscribe();
     }
