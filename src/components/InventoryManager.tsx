@@ -302,16 +302,22 @@ export default function InventoryManager({ user, business }: { user: any, busine
                         <ImagePlus className="w-6 h-6 mb-2" />
                         <span className="text-[10px] font-bold">Upload Image</span>
                         <input 
-                          type="text"
-                          placeholder="Paste image URL"
+                          type="file"
+                          accept="image/*"
                           className="absolute inset-0 opacity-0 cursor-pointer"
                           onChange={e => {
                             if (business?.plan === 'free') {
                               alert("Please upgrade to Pro to upload product images.");
                               return;
                             }
-                            const url = prompt("Please enter the image URL:");
-                            if (url) setImageUrl(url);
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              const reader = new FileReader();
+                              reader.onloadend = () => {
+                                setImageUrl(reader.result as string);
+                              };
+                              reader.readAsDataURL(file);
+                            }
                           }}
                         />
                       </>
