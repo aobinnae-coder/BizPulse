@@ -502,6 +502,18 @@ export default function ActionBoard({ user, business }: { user: any, business: a
 
   const saveEditTask = async () => {
     if (!selectedTask || !editTaskData) return;
+    
+    const changes: string[] = [];
+    if (editTaskData.title !== selectedTask.title) changes.push(`Title changed from "${selectedTask.title}" to "${editTaskData.title}"`);
+    if (editTaskData.status !== selectedTask.status) changes.push(`Status changed from ${selectedTask.status} to ${editTaskData.status}`);
+    if (editTaskData.priority !== selectedTask.priority) changes.push(`Priority changed from ${selectedTask.priority} to ${editTaskData.priority}`);
+    if (editTaskData.dueDate !== selectedTask.dueDate) changes.push(`Due date changed from ${selectedTask.dueDate || 'None'} to ${editTaskData.dueDate || 'None'}`);
+    if (editTaskData.assignedTo !== selectedTask.assignedTo) {
+      const oldStaff = staff.find(s => s.id === selectedTask.assignedTo)?.name || selectedTask.assignedTo || 'Unassigned';
+      const newStaff = staff.find(s => s.id === editTaskData.assignedTo)?.name || editTaskData.assignedTo || 'Unassigned';
+      changes.push(`Assignee changed from ${oldStaff} to ${newStaff}`);
+    }
+
     await updateDoc(doc(db, 'actionItems', selectedTask.id), {
       title: editTaskData.title,
       description: editTaskData.description,
@@ -511,10 +523,17 @@ export default function ActionBoard({ user, business }: { user: any, business: a
       assignedTo: editTaskData.assignedTo || null,
       parentId: editTaskData.parentId || null,
       recurrence: editTaskData.recurrence || 'none',
-      recurrenceEndDate: editTaskData.recurrenceEndDate || null
+      recurrenceEndDate: editTaskData.recurrenceEndDate || null,
+      updatedAt: new Date().toISOString()
     });
-    await logActivity(selectedTask.id, 'edit', 'Task details updated');
-    setSelectedTask({ ...selectedTask, ...editTaskData });
+
+    if (changes.length > 0) {
+      await logActivity(selectedTask.id, 'edit', changes.join('; '));
+    } else {
+      await logActivity(selectedTask.id, 'edit', 'Task details updated');
+    }
+
+    setSelectedTask({ ...selectedTask, ...editTaskData, updatedAt: new Date().toISOString() });
     setIsEditingTask(false);
   };
 
@@ -559,7 +578,7 @@ export default function ActionBoard({ user, business }: { user: any, business: a
 
   const saveAsTemplate = async () => {
     if (!selectedTask) return;
-    const name = prompt("Enter a name for this template:");
+    const name = prompt("Enter a name for this template:", selectedTask.title);
     if (!name) return;
 
     const templateData = {
@@ -567,10 +586,13 @@ export default function ActionBoard({ user, business }: { user: any, business: a
       name,
       description: selectedTask.description,
       priority: selectedTask.priority,
+      recurrence: selectedTask.recurrence || 'none',
       subtasks: subtasks.map(s => ({
         title: s.title,
-        dueDateOffset: s.dueDate ? Math.round((new Date(s.dueDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)) : null
-      }))
+        dueDateOffset: s.dueDate ? Math.round((new Date(s.dueDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)) : null,
+        parentId: s.parentId || null
+      })),
+      createdAt: new Date().toISOString()
     };
 
     await addDoc(collection(db, 'taskTemplates'), templateData);
@@ -584,8 +606,9 @@ export default function ActionBoard({ user, business }: { user: any, business: a
     setNewItem({
       ...newItem,
       title: template.name,
-      description: template.description,
-      priority: template.priority
+      description: template.description || '',
+      priority: template.priority || 'medium',
+      recurrence: template.recurrence || 'none'
     });
     
     // We'll handle applying subtasks after the main task is created in addItem
@@ -1152,18 +1175,31 @@ export default function ActionBoard({ user, business }: { user: any, business: a
                         </span>
                       </div>
                       <div className="space-y-1">
-                        {items.filter(i => i.dueDate === date.toISOString().split('T')[0]).map(item => (
+                        {filteredItems.filter(i => i.dueDate === date.toISOString().split('T')[0]).map(item => (
                           <div 
                             key={item.id}
                             onClick={(e) => { e.stopPropagation(); setSelectedTask(item); }}
                             className={cn(
-                              "px-2 py-1 rounded text-[10px] font-bold truncate transition-all shadow-sm",
+                              "px-2 py-1 rounded text-[10px] font-bold truncate transition-all shadow-sm group/card relative",
                               item.status === 'done' ? "bg-emerald-50 text-emerald-700 border border-emerald-100 opacity-60" :
                               item.priority === 'high' ? "bg-red-50 text-red-700 border border-red-100" :
                               "bg-blue-50 text-blue-700 border border-blue-100"
                             )}
                           >
                             {item.title}
+                            <button 
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                const newDate = prompt("Enter new due date (YYYY-MM-DD):", item.dueDate);
+                                if (newDate && newDate !== item.dueDate) {
+                                  await updateDoc(doc(db, 'actionItems', item.id), { dueDate: newDate });
+                                  await logActivity(item.id, 'edit', `Due date changed from ${item.dueDate || 'None'} to ${newDate} (via Calendar)`);
+                                }
+                              }}
+                              className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover/card:opacity-100 bg-white/80 rounded p-0.5 shadow-sm text-stone-500 hover:text-stone-900"
+                            >
+                              <Edit className="w-2.5 h-2.5" />
+                            </button>
                           </div>
                         ))}
                       </div>
@@ -1892,10 +1928,23 @@ export default function ActionBoard({ user, business }: { user: any, business: a
                               </span>
                             )}
                             {st.parentId && (
-                              <GitBranch className={cn("w-3 h-3", subtasks.find(s => s.id === st.parentId)?.done ? "text-emerald-500" : "text-amber-500")} />
+                              <GitBranch className={cn("w-3 h-3 text-amber-500")} />
+                            )}
+                            {(st.attachments?.length || 0) > 0 && (
+                              <div className="flex items-center gap-1 bg-stone-100 px-1 py-0.5 rounded text-[8px] font-bold text-stone-500">
+                                <Paperclip className="w-2.5 h-2.5" />
+                                {st.attachments.length}
+                              </div>
                             )}
                           </div>
                         <div className="flex items-center gap-1 opacity-0 group-hover/sub:opacity-100 transition-all">
+                          <button 
+                            onClick={(e) => { e.stopPropagation(); handleSubtaskFileUpload(st.id); }}
+                            className="p-1.5 hover:bg-stone-200 text-stone-400 rounded-lg transition-all"
+                            title="Add Attachment"
+                          >
+                            <Paperclip className="w-3.5 h-3.5" />
+                          </button>
                           <button 
                             onClick={() => setEditingSubtask(editingSubtask === st.id ? null : st.id)}
                             className={cn(
@@ -1921,7 +1970,7 @@ export default function ActionBoard({ user, business }: { user: any, business: a
                             initial={{ height: 0 }}
                             animate={{ height: 'auto' }}
                             exit={{ height: 0 }}
-                            className="border-t border-stone-200/50 bg-white/50 overflow-hidden"
+                            className="border-t border-stone-100 bg-stone-50/30 overflow-hidden"
                           >
                             <div className="p-4 space-y-4">
                               <div className="grid grid-cols-2 gap-4">
@@ -1931,7 +1980,7 @@ export default function ActionBoard({ user, business }: { user: any, business: a
                                     type="date" 
                                     value={st.dueDate || ''}
                                     onChange={(e) => updateSubtaskField(st.id, 'dueDate', e.target.value)}
-                                    className="w-full p-2 bg-stone-50 border border-stone-100 rounded-lg text-[10px] font-bold outline-none focus:ring-1 focus:ring-stone-200"
+                                    className="w-full p-2 bg-white border border-stone-100 rounded-lg text-[10px] font-bold outline-none focus:ring-1 focus:ring-stone-200"
                                   />
                                 </div>
                                 <div className="space-y-1">
@@ -1939,7 +1988,7 @@ export default function ActionBoard({ user, business }: { user: any, business: a
                                   <select 
                                     value={st.parentId || ''}
                                     onChange={(e) => updateSubtaskField(st.id, 'parentId', e.target.value)}
-                                    className="w-full p-2 bg-stone-50 border border-stone-100 rounded-lg text-[10px] font-bold outline-none focus:ring-1 focus:ring-stone-200"
+                                    className="w-full p-2 bg-white border border-stone-100 rounded-lg text-[10px] font-bold outline-none focus:ring-1 focus:ring-stone-200"
                                   >
                                     <option value="">No Dependency</option>
                                     {subtasks.filter(s => s.id !== st.id).map(s => (
@@ -1948,27 +1997,47 @@ export default function ActionBoard({ user, business }: { user: any, business: a
                                   </select>
                                 </div>
                               </div>
+
+                              {(st.attachments || []).length > 0 && (
+                                <div className="space-y-2">
+                                  <label className="text-[9px] font-black text-stone-400 uppercase tracking-widest ml-1">Sub-task Attachments</label>
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                    {st.attachments.map((file: any) => (
+                                      <div key={file.id} className="flex items-center gap-2 p-2 bg-white border border-stone-200 rounded-xl shadow-sm">
+                                        <FileText className="w-3 h-3 text-stone-400 shrink-0" />
+                                        <span className="text-[10px] font-bold text-stone-700 truncate flex-1">{file.name}</span>
+                                        <div className="flex items-center gap-1 shrink-0">
+                                          <a href={file.url} target="_blank" rel="noreferrer" className="p-1 hover:bg-stone-50 rounded text-stone-400 hover:text-stone-900"><Download className="w-3 h-3" /></a>
+                                          <button onClick={() => editSubtaskAttachment(st.id, file.id)} className="p-1 hover:bg-stone-50 rounded text-stone-400 hover:text-blue-500"><Edit3 className="w-3 h-3" /></button>
+                                          <button onClick={() => removeSubtaskAttachment(st.id, file.id)} className="p-1 hover:bg-red-50 rounded text-stone-400 hover:text-red-500"><Trash2 className="w-3 h-3" /></button>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           </motion.div>
                         )}
                       </AnimatePresence>
                     </div>
                   ))}
-                  <div className="flex gap-2">
-                    <input 
-                      type="text" 
-                      placeholder="Add a next step..."
-                      value={newSubtaskTitle}
-                      onChange={e => setNewSubtaskTitle(e.target.value)}
-                      className="flex-1 bg-stone-50 border border-stone-100 rounded-xl px-4 py-3 text-xs font-bold outline-none focus:ring-1 focus:ring-stone-200"
-                    />
-                    <button 
-                      onClick={addSubtask}
-                      className="px-6 py-3 bg-stone-900 text-white rounded-xl text-xs font-bold hover:bg-stone-800 transition-all shadow-lg shadow-stone-900/10"
-                    >
-                      Add
-                    </button>
-                  </div>
+                </div>
+
+                <div className="flex gap-2">
+                  <input 
+                    type="text" 
+                    placeholder="Add a next step..."
+                    value={newSubtaskTitle}
+                    onChange={e => setNewSubtaskTitle(e.target.value)}
+                    className="flex-1 bg-stone-50 border border-stone-100 rounded-xl px-4 py-3 text-xs font-bold outline-none focus:ring-1 focus:ring-stone-200"
+                  />
+                  <button 
+                    onClick={addSubtask}
+                    className="px-6 py-3 bg-stone-900 text-white rounded-xl text-xs font-bold hover:bg-stone-800 transition-all shadow-lg shadow-stone-900/10"
+                  >
+                    Add
+                  </button>
                 </div>
               </div>
             )}
